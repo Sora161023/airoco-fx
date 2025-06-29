@@ -1,7 +1,9 @@
 import pygame
 from pygame.locals import *
 import requests
-import threading
+# import threading
+from concurrent.futures import ThreadPoolExecutor
+import time
 
 airoco_url = 'https://airoco.necolico.jp/data-api/latest?id=CgETViZ2&subscription-key=6b8aa7133ece423c836c38af01c59880'
 
@@ -39,6 +41,11 @@ def main():
     # Main loop
     running = True
     dx = 0
+    executer = ThreadPoolExecutor(max_workers=2)
+
+    last_fetch_time = 0
+    fetch_interval = 5
+
     while running:
         clock.tick(fps)
         screen.fill((255, 255, 255))
@@ -48,14 +55,18 @@ def main():
             dx = -WIDTH // 2 - 50
         pygame.display.flip()
 
+        current_time = time.time()
+        if current_time - last_fetch_time > fetch_interval:
+            executer.submit(get_data, 'R3-3F_EH')
+            last_fetch_time = current_time
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 running = False
             if event.type == KEYDOWN:
-                # バックグラウンドでデータ取得を開始
-                thread = threading.Thread(target=get_data, args=('R3-3F_EH',))
-                thread.daemon = True  # メインプログラム終了時にスレッドも終了
-                thread.start()
+                if event.key == K_d:
+                    executer.submit(get_data, 'R3-3F_EH')
+                    last_fetch_time = current_time
 
     pygame.quit()
     return 0
