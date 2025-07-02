@@ -29,6 +29,17 @@ pygame.init()
 pygame.display.set_caption('Airoco FX')
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 font = pygame.font.SysFont('Meiryo', 18)
+font_small = pygame.font.SysFont('Meiryo', 12)
+font_large = pygame.font.SysFont('Meiryo', 22)
+clock = pygame.time.Clock()
+
+pygame.image.load('icon.png')
+pygame.display.set_icon(pygame.image.load('icon.png'))
+
+# --- データ更新イベント定義 ---
+UPDATE_DATA_EVENT = pygame.USEREVENT + 1
+UPDATE_INTERVAL_MS = 30000
+pygame.time.set_timer(UPDATE_DATA_EVENT, UPDATE_INTERVAL_MS)
 
 def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
     """過去7日間のセンサデータを取得"""
@@ -70,5 +81,26 @@ def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
 
 def main() -> None:
     runnning = True
-    
+    screen.fill(COLOR_BG)
+    pygame.display.flip()
+
+    while runnning:
+
+        for event in pygame.event.get():
+            # if event.type == pygame.QUIT:
+            #     runnning = False
+            if event.type == UPDATE_DATA_EVENT:
+                timestamps, co2_values, temp_values, humid_values = get_data('Ｒ３ー３０１')
+                print("Data updated")
+                print(f"Timestamps: {timestamps}")
+                print(f"CO2 Values: {co2_values}")
+                print(f"Temperature Values: {temp_values}")
+                print(f"Humidity Values: {humid_values}")
+                if not timestamps:
+                    continue
+
+if __name__ == "__main__":
+    main()
+    pygame.quit()
+    sys.exit()
 
