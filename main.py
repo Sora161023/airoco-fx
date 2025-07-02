@@ -7,6 +7,29 @@ import datetime
 import numpy as np
 from typing import Tuple
 
+WIDTH  = 500
+HEIGHT = 600
+WINDOW_SIZE = 288
+
+# --- 色の定義 ---
+COLOR_WHITE = (255, 255, 255)
+COLOR_BLACK = (0, 0, 0)
+COLOR_GREEN = (0, 180, 0)
+COLOR_RED = (200, 0, 0)
+COLOR_BLUE = (50, 50, 200)
+COLOR_BG = (240, 240, 250)
+COLOR_SCROLL_BG = (200, 200, 200)
+COLOR_SCROLL_HANDLE = (100, 100, 255)
+COLOR_INDICATOR = (255, 0, 0)
+COLOR_BUTTON = (220, 220, 220)
+COLOR_BUTTON_ACTIVE = (180, 220, 255)
+
+# --- Pygame 初期化 ---
+pygame.init()
+pygame.display.set_caption('Airoco FX')
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+font = pygame.font.SysFont('Meiryo', 18)
+
 def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
     """過去7日間のセンサデータを取得"""
     curr_time = int(time.time())
