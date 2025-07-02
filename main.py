@@ -38,7 +38,7 @@ pygame.display.set_icon(pygame.image.load('icon.png'))
 
 # --- データ更新イベント定義 ---
 UPDATE_DATA_EVENT = pygame.USEREVENT + 1
-UPDATE_INTERVAL_MS = 30000
+UPDATE_INTERVAL_MS = 10000
 pygame.time.set_timer(UPDATE_DATA_EVENT, UPDATE_INTERVAL_MS)
 
 def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
@@ -59,7 +59,7 @@ def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
             raw_data = csv.reader(res.text.strip().splitlines())
 
             for row in raw_data:
-                if row[1] == 'Ｒ３ー３０１':
+                if row[1] == 'Ｒ３ー４０１':
                     data.append(list(map(float, row[3:7])))
         except requests.RequestException as e:
             print(f"Error fetching data: {e}")
@@ -70,7 +70,6 @@ def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
         return [], [], [], []
     
     data = np.array(data)
-    data = np.argsort(data[:, 3])  # 時刻でソート
 
     timestamps   = [datetime.datetime.fromtimestamp(ts) for ts in data[:, 3]]
     co2_values   = data[:, 0].tolist()
@@ -87,15 +86,15 @@ def main() -> None:
     while runnning:
 
         for event in pygame.event.get():
-            # if event.type == pygame.QUIT:
-            #     runnning = False
+            if event.type == pygame.QUIT:
+                runnning = False
             if event.type == UPDATE_DATA_EVENT:
                 timestamps, co2_values, temp_values, humid_values = get_data('Ｒ３ー３０１')
                 print("Data updated")
                 print(f"Timestamps: {timestamps}")
-                print(f"CO2 Values: {co2_values}")
-                print(f"Temperature Values: {temp_values}")
-                print(f"Humidity Values: {humid_values}")
+                # print(f"CO2 Values: {co2_values}")
+                # print(f"Temperature Values: {temp_values}")
+                # print(f"Humidity Values: {humid_values}")
                 if not timestamps:
                     continue
 
