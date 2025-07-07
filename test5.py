@@ -9,34 +9,35 @@ def get_airoco_data():
     curr_time = int(time.time())
     data = []
 
+    airoco_url = 'https://airoco.necolico.jp/data-api/day-csv'
+    id = 'CgETViZ2'
+    subscription_key = '6b8aa7133ece423c836c38af01c59880'
+    
     # 過去7日間のデータを日ごとに取得
     for i in range(7, 0, -1):
         tt = curr_time - 3600 * 24 * i
         try:
-            res = requests.get(f'https://airoco.necolico.jp/data-api/day-csv?id=CgETViZ2&subscription-key=6b8aa7133ece423c836c38af01c59880&startDate={tt}')
+            res = requests.get(f'{airoco_url}?id={id}&subscription-key={subscription_key}&startDate={tt}')
             res.raise_for_status()  # HTTPエラーがあれば例外を発生
-            raw_text = res.content.decode('utf-8-sig')
-            raw_data = csv.reader(raw_text.strip().splitlines())
+            raw_data = csv.reader(res.text.strip().splitlines())
 
             for row in raw_data:
                 if row[1] == 'Ｒ３ー４０１':
-                    try:
-                        data.append(list(map(float, [row[3], row[4], row[5], row[6]])))  # CO2濃度、気温、湿度の値を取得
-                    except (ValueError, IndexError):
-                        pass
-
+                    data.append(list(map(float, row[3:7])))  # CO2濃度, 気温, 湿度, タイムスタンプ
         except requests.exceptions.RequestException as e:
             print(f"API request failed: {e}")
             continue
 
-    data_np = np.array(data)
-    sorted_indices = np.argsort(data_np[:, 3])
-    data_np = data_np[sorted_indices]
-    
-    timestamps = [datetime.datetime.fromtimestamp(ts) for ts in data_np[:, 1]]
-    co2_values = list(data_np[:, 0])      # CO2濃度の値
-    temp_values = list(data_np[:, 1])     # 気温の値
-    humid_values = list(data_np[:, 2])    # 湿度の値
+    if not data:
+        print("This sensor is not connected or no data available.")
+        return [], [], [], []
+
+    data = np.array(data)
+
+    timestamps = [datetime.datetime.fromtimestamp(ts) for ts in data[:, 3]]
+    co2_values = data[:, 0].tolist()  # CO2濃度
+    temp_values = data[:, 1].tolist()  # 気温
+    humid_values = data[:, 2].tolist()  # 湿度
     
     return timestamps, co2_values, temp_values, humid_values
 
@@ -66,8 +67,6 @@ def update_data(now_timestamps, now_co2, now_temp, now_humid):
             now_temp.append(new_temp[i])
             now_humid.append(new_humid[i])
             added_count += 1
-        else:
-            break
     
     # 追加したかどうかのログ
     if added_count > 0:
@@ -122,7 +121,11 @@ now_graph = "co2"  # 現在表示中のグラフの種類
 # --- ゲーム変数 ---
 INITIAL_MONEY = 100000 # 初期所持金
 money = INITIAL_MONEY
-stock = 0
+stocks = {
+    "co2": {"stock" : 0, "then_price" : 0, "profit": 0},  # CO2株の保有数と購入価格と利益
+    "temp": {"stock" : 0, "then_price" : 0, "profit": 0}, # 気温株の保有数と購入価格と利益
+    "humid": {"stock" : 0, "then_price" : 0, "profit": 0} # 湿度株の保有数と購入価格と利益
+}
 
 # --- レイアウト定義 ---
 GRAPH_RECT = pygame.Rect(50, 60, 400, 280)  # 基本のグラフ表示領域
@@ -244,7 +247,7 @@ def draw_ui(price, money_val, stock_val):
     screen.blit(price_text, (GRAPH_RECT.left, status_y_start))
     money_text = font.render(f"所持金: ¥{money_val:,}", True, COLOR_BLACK)
     screen.blit(money_text, (GRAPH_RECT.left, status_y_start + 40))
-    stock_text = font.render(f"保有株: {stock_val} 株", True, COLOR_BLACK)
+    stock_text = font.render(f"保有株: {stock_val[now_graph]['stock']}株", True, COLOR_BLACK)
     screen.blit(stock_text, (GRAPH_RECT.left, status_y_start + 80))
     
     # 操作説明
@@ -252,9 +255,13 @@ def draw_ui(price, money_val, stock_val):
     buy_text = font.render("Bキー: 買う", True, COLOR_BLUE)
     sell_text = font.render("Sキー: 売る", True, COLOR_RED)
     scroll_text = font.render("←→: スクロール", True, COLOR_BLACK)
+    attention_text = font.render("※CO2株は1株単位、気温・湿度株は10株単位で購入", True, COLOR_BLACK)    # 注意書き
     screen.blit(buy_text, (help_x, status_y_start))
     screen.blit(sell_text, (help_x, status_y_start + 40))
     screen.blit(scroll_text, (help_x, status_y_start + 80))
+    # 注意書きの中央揃え
+    center = (screen.get_width() - attention_text.get_width()) // 2
+    screen.blit(attention_text, (center, status_y_start + 120))
 
 def draw_scrollbar():
     """スクロールバーを描画する"""
@@ -294,12 +301,20 @@ while running:
 
             # Bキー : 株を買う操作
             if event.key == pygame.K_b and money >= current_price:
-                stock += 1
-                money -= int(current_price)
+                if now_graph == "temp" or now_graph == "humid":
+                    stock_quantity = 10
+                else:
+                    stock_quantity = 1
+                    
+                if money >= current_price * stock_quantity:  # 購入可能な金額か確認
+                    stocks[now_graph]["stock"] += stock_quantity
+                    stocks[now_graph]["then_price"] += current_price * stock_quantity  # 購入時の価格を記録
+                    money -= int(current_price * stock_quantity)
+
             # Sキー　: 株を売る操作
-            elif event.key == pygame.K_s and stock > 0:
-                stock -= 1
-                money += int(current_price)
+            elif event.key == pygame.K_s and stocks[now_graph]["stock"] > 0:
+                stocks[now_graph]["stock"] -= 1
+                money += int(current_price * 0.9)  # 売却時は10%の手数料を引く
 
         # --- マウス入力 ---
         # マウスボタンが押されたとき
@@ -353,14 +368,18 @@ while running:
     current_price = active_prices[current_price_index] if current_price_index >= 0 else 0
 
     # 収益計算
-    total_assets = money + stock * current_price
+    total_assets = money + stocks[now_graph]["stock"] * current_price
     profit = total_assets - INITIAL_MONEY
 
-    # 描画関数の呼び出し
+    # 各株の利益を計算
+    for graph_type in select_code:
+        stocks[graph_type]["profit"] = (stocks[graph_type]["stock"] * current_price ) - stocks[graph_type]["then_price"]
+
+    # 描画関数の呼び出しs
     draw_buttons(now_graph)
-    draw_header_info(profit)
+    draw_header_info(stocks[now_graph]["profit"])
     draw_graph(active_prices, timestamps, scroll_index, active_unit)
-    draw_ui(current_price, money, stock)
+    draw_ui(current_price, money, stocks)
     draw_scrollbar()
 
     pygame.display.flip()
