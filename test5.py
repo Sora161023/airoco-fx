@@ -122,9 +122,10 @@ now_graph = "co2"  # 現在表示中のグラフの種類
 INITIAL_MONEY = 100000 # 初期所持金
 money = INITIAL_MONEY
 stocks = {
-    "co2": {"stock" : 0, "then_price" : 0, "profit": 0},  # CO2株の保有数と購入価格と利益
-    "temp": {"stock" : 0, "then_price" : 0, "profit": 0}, # 気温株の保有数と購入価格と利益
-    "humid": {"stock" : 0, "then_price" : 0, "profit": 0} # 湿度株の保有数と購入価格と利益
+    "co2": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0},     # CO2株の保有数と合計購入価格と合計売値金と損益
+    "temp": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0}, # 気温株の保有数と合計購入価格と合計売値金と損益
+    "humid": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0} # 湿度株の保有数と合計購入価格と合計売値金と損益
+
 }
 
 # --- レイアウト定義 ---
@@ -163,7 +164,7 @@ def draw_header_info(profit):
         profit_color, sign = COLOR_BLUE, "+"
     else:
         profit_color, sign = COLOR_RED, ""
-    profit_text = font_l.render(f"累計収益: ¥{sign}{profit:,}", True, profit_color)
+    profit_text = font_l.render(f"累計損益: ¥{sign}{profit:,}", True, profit_color)
     screen.blit(profit_text, (GRAPH_RECT.right - profit_text.get_width(), 25))
 
 # グラフの種類を選択するボタンを描画する関数
@@ -308,16 +309,17 @@ while running:
                     
                 if money >= current_price * stock_quantity:  # 購入可能な金額か確認
                     stocks[now_graph]["stock"] += stock_quantity
-                    stocks[now_graph]["then_price"] += current_price * stock_quantity  # 購入時の価格を記録
+                    stocks[now_graph]["buy_price"] += int(current_price * stock_quantity)  # 購入時の価格を記録
                     money -= int(current_price * stock_quantity)
 
             # Sキー　: 株を売る操作
             elif event.key == pygame.K_s and stocks[now_graph]["stock"] > 0:
                 stocks[now_graph]["stock"] -= 1
+                stocks[now_graph]["sell_price"] += int(current_price * 0.9)  # 売却時の価格を記録
                 money += int(current_price * 0.9)  # 売却時は10%の手数料を引く
 
         # --- マウス入力 ---
-        # マウスボタンが押されたとき
+        # マウスボタンが押されたとき8
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if handle_rect.collidepoint(event.pos):
                 dragging = True
@@ -368,12 +370,14 @@ while running:
     current_price = active_prices[current_price_index] if current_price_index >= 0 else 0
 
     # 収益計算
-    total_assets = money + stocks[now_graph]["stock"] * current_price
-    profit = total_assets - INITIAL_MONEY
+    # total_assets = money + stocks[now_graph]["stock"] * current_price
+    # profit = total_assets - INITIAL_MONEY
 
-    # 各株の利益を計算
+    # 各株の損益を計算
     for graph_type in select_code:
-        stocks[graph_type]["profit"] = (stocks[graph_type]["stock"] * current_price ) - stocks[graph_type]["then_price"]
+        possession_money = stocks[graph_type]["sell_price"] + (stocks[graph_type]["stock"] * current_price) # 現在の持ち金
+        stocks[graph_type]["profit"] = possession_money - stocks[graph_type]["buy_price"]  # 損益 = 現在の持ち金 - 購入金額
+        
 
     # 描画関数の呼び出しs
     draw_buttons(now_graph)
