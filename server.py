@@ -25,7 +25,7 @@ class DB:
             cur = conn.cursor()
             cur.execute(query, params)
             conn.commit()
-            res = cur.fetchall
+            res = cur.fetchall()
 
             return res
     
@@ -72,6 +72,84 @@ class DB:
 
         self._execute(self.CREATE_TABLE)
     
-db = DB()
-print(db._get_log_time())
+
+class APIServer:
+    def __init__(self, db: DB, host: str='localhost', port: int=5000):
+        self.db   = db
+        self.host = host
+        self.port = port
+
+    def _app(self, environ, response) -> list:
+        header = [
+            ('Access-Control-Allow-Origin', '*'),
+            ('Access-Control-Allow-Headers', 'Content-Type'),
+            ('Access-Control-Allow-Methods', 'GET, POST'),
+            ]
+        
+        request_method = environ.get('REQUEST_METHOD')
+
+        if request_method == 'GET':
+            query_string = environ.get('QUERY_STRING')
+            if query_string:
+                # クエリ文字列をパース
+                qs = urllib.parse.parse_qs(query_string)
+
+                # 自分のランキングを取得
+                id = qs.get('id')
+                if id:
+                    res = self.db.get_my_ranking(id[0])
+
+                # ランキング上位を取得
+                limit = qs.get('limit')
+                if limit:
+                    res = self.db.get_top_ranking(int(limit[0]))
+
+            else:
+                # 全ランキングを取得
+                res = self.db.get_top_ranking(-1)
+
+            # 辞書型をjsonに変換
+            res = json.dumps(res).encode('utf-8')
+            # ヘッダーセット
+            header.append(('Content-Type', 'application/json; charset=utf-8'))
+            header.append(('Content-Length', str(len(res))))
+            # HTTPステータス
+            status = '200 OK'
+
+            # レスポンス送信
+            response(status, header)
+            return [res]
+    
+        if request_method == 'POST':
+            wsgi_input = environ.get('wsgi.input')
+            if wsgi_input is None:
+                response('400 Bad Reuest', header)
+                return []
+            
+            req = json.loads(wsgi_input.read(int(environ.get('CONTENT_LENGTH', 0))).decode('utf-8'))
+            if req:
+                id = req.get('id')
+                user_name = req.get('user_name')
+                score = req.get('score')
+                if id and user_name and score:
+                    self.db.write_new_score(id, user_name, score)
+                    response('200 OK', header)
+                    return []
+            response('400 Bad Request', header)
+            return []
+        
+    def start(self) -> None:
+        with make_server(self.host, self.port, self._app) as hppd:
+            print(f'server stating on {self.host}:{self.port}...')
+            hppd.serve_forever()
+
+
+def main() -> None:
+    db = DB()
+    db.reset_ranking()
+    api_server = APIServer(db)
+    api_server.start()
+
+if __name__ == '__main__':
+    main()
 
