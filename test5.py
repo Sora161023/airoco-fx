@@ -82,7 +82,7 @@ pygame.init()
 screen = pygame.display.set_mode((500, 600))    # ウィンドウサイズを500x600に設定
 pygame.display.set_caption("Airoco株ゲーム")    # タイトル設定
 font = pygame.font.SysFont("Meiryo", 18)        # フォント設定
-font_s = pygame.font.SysFont("Meiryo", 12)
+font_s = pygame.font.SysFont("Meiryo", 11)
 font_l = pygame.font.SysFont("Meiryo", 22)
 clock = pygame.time.Clock()
 
@@ -118,8 +118,26 @@ print(f"湿度の初期データ数: {len(humid_values)}件")
 
 now_graph = "co2"  # 現在表示中のグラフの種類
 
+
+# --- 短時間用 ---
+SPECIAL_OFF = "OFF"
+SPECIAL_SELECTING = "SELECTING"
+SPECIAL_ACTIVE = "ACTIVE"
+special_state = { 
+    "co2": SPECIAL_OFF, 
+    "temp": SPECIAL_OFF, 
+    "humid": SPECIAL_OFF 
+}
+
+cooldown = {
+    "co2": None,
+    "temp": None,
+    "humid": None
+}
+
+
 # --- ゲーム変数 ---
-INITIAL_MONEY = 100000 # 初期所持金
+INITIAL_MONEY = 10000 # 初期所持金
 money = INITIAL_MONEY
 stocks = {
     "co2": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0},     # CO2株の保有数と合計購入価格と合計売値金と損益
@@ -127,9 +145,11 @@ stocks = {
     "humid": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0} # 湿度株の保有数と合計購入価格と合計売値金と損益
 
 }
+input_quantity = ""  # 数字を文字列で一時保存
+soecial_mode = False  # 短時間モードのフラグ
 
 # --- レイアウト定義 ---
-GRAPH_RECT = pygame.Rect(50, 60, 400, 280)  # 基本のグラフ表示領域
+GRAPH_RECT = pygame.Rect(50, 100, 400, 220)  # 基本のグラフ表示領域
 SCROLL_BAR_RECT = pygame.Rect(GRAPH_RECT.left, GRAPH_RECT.bottom + 75, GRAPH_RECT.width, 10) 
 HANDLE_WIDTH = 40 
 handle_rect = pygame.Rect(SCROLL_BAR_RECT.left, SCROLL_BAR_RECT.top - 5, HANDLE_WIDTH, 20)
@@ -140,9 +160,10 @@ dragging = False
 
 # ボタンの定義
 BUTTON_WIDTH, BUTTON_HEIGHT = 50, 30
-CO2_BUTTON_RECT = pygame.Rect(GRAPH_RECT.left, 20, BUTTON_WIDTH, BUTTON_HEIGHT)
-TEMP_BUTTON_RECT = pygame.Rect(CO2_BUTTON_RECT.right + 10, 20, BUTTON_WIDTH, BUTTON_HEIGHT)
-HUMID_BUTTON_RECT = pygame.Rect(TEMP_BUTTON_RECT.right + 10, 20, BUTTON_WIDTH, BUTTON_HEIGHT)
+CO2_BUTTON_RECT = pygame.Rect(GRAPH_RECT.left, 60, BUTTON_WIDTH, BUTTON_HEIGHT)
+TEMP_BUTTON_RECT = pygame.Rect(CO2_BUTTON_RECT.right + 10, 60, BUTTON_WIDTH, BUTTON_HEIGHT)
+HUMID_BUTTON_RECT = pygame.Rect(TEMP_BUTTON_RECT.right + 10, 60, BUTTON_WIDTH, BUTTON_HEIGHT)
+SPECIAL_BUTTON_RECT = pygame.Rect(50, 20, 120, 30)  #  短時間モード用
 button_map = {
     'co2': CO2_BUTTON_RECT,
     'temp': TEMP_BUTTON_RECT,
@@ -165,7 +186,19 @@ def draw_header_info(profit):
     else:
         profit_color, sign = COLOR_RED, ""
     profit_text = font_l.render(f"累計損益: ¥{sign}{profit:,}", True, profit_color)
-    screen.blit(profit_text, (GRAPH_RECT.right - profit_text.get_width(), 25))
+    screen.blit(profit_text, (GRAPH_RECT.right - profit_text.get_width(), 60))
+
+    # 区切り線を描画
+    pygame.draw.line(screen, COLOR_BLACK, (0, 55), (screen.get_width(), 55))  # 区切り線
+
+    # 短時間モード
+    button_color = COLOR_BUTTON_ACTIVE if special_state[now_graph] == SPECIAL_SELECTING else COLOR_BUTTON
+    pygame.draw.rect(screen, button_color, SPECIAL_BUTTON_RECT, border_radius=5)
+    pygame.draw.rect(screen, COLOR_BLACK, SPECIAL_BUTTON_RECT, 1, border_radius=5)
+
+    label = font.render("短時間モード", True, COLOR_BLACK)
+    screen.blit(label, label.get_rect(center=SPECIAL_BUTTON_RECT.center))
+
 
 # グラフの種類を選択するボタンを描画する関数
 def draw_buttons(active_type):
@@ -242,27 +275,50 @@ def draw_graph(prices, times, start_index, unit):
 # ユーザーインターフェースを描画する関数
 def draw_ui(price, money_val, stock_val):
     status_y_start = UI_AREA_Y + 20
-    
-    # ステータス表示
-    price_text = font.render(f"現在値: {price:.2f} rco", True, COLOR_BLACK)
-    screen.blit(price_text, (GRAPH_RECT.left, status_y_start))
-    money_text = font.render(f"所持金: ¥{money_val:,}", True, COLOR_BLACK)
-    screen.blit(money_text, (GRAPH_RECT.left, status_y_start + 40))
-    stock_text = font.render(f"保有株: {stock_val[now_graph]['stock']}株", True, COLOR_BLACK)
-    screen.blit(stock_text, (GRAPH_RECT.left, status_y_start + 80))
-    
-    # 操作説明
-    help_x = screen.get_width()/2 + 40
-    buy_text = font.render("Bキー: 買う", True, COLOR_BLUE)
-    sell_text = font.render("Sキー: 売る", True, COLOR_RED)
-    scroll_text = font.render("←→: スクロール", True, COLOR_BLACK)
-    attention_text = font.render("※CO2株は1株単位、気温・湿度株は10株単位で購入", True, COLOR_BLACK)    # 注意書き
-    screen.blit(buy_text, (help_x, status_y_start))
-    screen.blit(sell_text, (help_x, status_y_start + 40))
-    screen.blit(scroll_text, (help_x, status_y_start + 80))
-    # 注意書きの中央揃え
-    center = (screen.get_width() - attention_text.get_width()) // 2
-    screen.blit(attention_text, (center, status_y_start + 120))
+    state = special_state[now_graph]
+
+    if state == SPECIAL_SELECTING:
+        select_text = font.render("購入株数を選択してください", True, COLOR_RED)
+        screen.blit(select_text, (GRAPH_RECT.left, status_y_start + 20))
+        input_display = input_quantity if input_quantity else "_"
+        input_text = font.render(f"選択株数: {input_display}", True, COLOR_BLUE)
+        screen.blit(input_text, (GRAPH_RECT.left, status_y_start + 40))
+
+
+    elif state == SPECIAL_ACTIVE:
+        stock_text = font.render(f"保有株: {stock_val[now_graph]['stock']}株", True, COLOR_BLACK)
+        remaining = 3600 - int((datetime.datetime.now() - cooldown[now_graph]).total_seconds())
+        minutes = max(0, remaining // 60)
+        seconds = max(0, remaining % 60)
+
+        time_text = font.render(f"残り時間: {minutes:02}:{seconds:02}", True, COLOR_RED)
+        notice_text = font.render("売却のみ可能です", True, COLOR_BLACK)
+
+        screen.blit(stock_text, (GRAPH_RECT.left, status_y_start))
+        screen.blit(time_text, (GRAPH_RECT.left, status_y_start + 40))
+        screen.blit(notice_text, (GRAPH_RECT.left, status_y_start + 80))
+
+    else:
+        # 通常UI
+        price_text = font.render(f"現在値: {price:.2f} rco", True, COLOR_BLACK)
+        money_text = font.render(f"所持金: ¥{money_val:,}", True, COLOR_BLACK)
+        stock_text = font.render(f"保有株: {stock_val[now_graph]['stock']}株", True, COLOR_BLACK)
+        screen.blit(price_text, (GRAPH_RECT.left, status_y_start))
+        screen.blit(money_text, (GRAPH_RECT.left, status_y_start + 40))
+        screen.blit(stock_text, (GRAPH_RECT.left, status_y_start + 80))
+
+        # 操作説明
+        help_x = screen.get_width()/2 + 40
+        buy_text = font.render("Bキー: 買う", True, COLOR_BLUE)
+        sell_text = font.render("Sキー: 売る", True, COLOR_RED)
+        scroll_text = font.render("←→: スクロール", True, COLOR_BLACK)
+        attention_text = font.render("※CO2株は1株単位、気温・湿度株は10株単位で購入", True, COLOR_BLACK)
+        screen.blit(buy_text, (help_x, status_y_start))
+        screen.blit(sell_text, (help_x, status_y_start + 40))
+        screen.blit(scroll_text, (help_x, status_y_start + 80))
+        # 注意書きの中央揃え
+        center = (screen.get_width() - attention_text.get_width()) // 2
+        screen.blit(attention_text, (center, status_y_start + 120))
 
 def draw_scrollbar():
     """スクロールバーを描画する"""
@@ -300,37 +356,95 @@ while running:
             if current_price_index < 0: continue
             current_price = active_prices[current_price_index]
 
+            # 数字入力（0～9）
+            if special_state[now_graph] == SPECIAL_SELECTING and event.unicode.isdigit():
+                input_quantity += event.unicode
+
+            # バックスペースで削除
+            elif special_state[now_graph] == SPECIAL_SELECTING and event.key == pygame.K_BACKSPACE:
+                input_quantity = input_quantity[:-1]
+
+                print("Enterキーが押されました。")
+
             # Bキー : 株を買う操作
             if event.key == pygame.K_b and money >= current_price:
-                if now_graph == "temp" or now_graph == "humid":
-                    stock_quantity = 10
+
+                # 短時間対策
+                if special_state[now_graph] == SPECIAL_SELECTING:
+                    pass  # 買えない
+                if special_state[now_graph] == SPECIAL_ACTIVE:
+                    pass  # 買えない  
+                # 通常
                 else:
-                    stock_quantity = 1
-                    
-                if money >= current_price * stock_quantity:  # 購入可能な金額か確認
-                    stocks[now_graph]["stock"] += stock_quantity
-                    stocks[now_graph]["buy_price"] += int(current_price * stock_quantity)  # 購入時の価格を記録
-                    money -= int(current_price * stock_quantity)
+                    if now_graph == "temp" or now_graph == "humid":
+                        stock_quantity = 10
+                    else:
+                        stock_quantity = 1
+                        
+                    if money >= current_price * stock_quantity:  # 購入可能な金額か確認
+                        stocks[now_graph]["stock"] += stock_quantity
+                        stocks[now_graph]["buy_price"] += int(current_price * stock_quantity)  # 購入時の価格を記録
+                        money -= int(current_price * stock_quantity)
+            
+            # Enterキー : 株の購入確定
+            elif event.key == pygame.K_RETURN:
+                if special_state[now_graph] == SPECIAL_SELECTING:
+                    if input_quantity.isdigit() and int(input_quantity) > 0:    # 数字が入力されているか確認
+                        stock_quantity = int(input_quantity)
+                        if now_graph == "temp" or now_graph == "humid":
+                            stock_quantity *= 10
+                        if money >= current_price * stock_quantity:
+                            stocks[now_graph]["stock"] += stock_quantity
+                            stocks[now_graph]["buy_price"] += int(current_price * stock_quantity)  # 購入時の価格を記録
+                            money -= int(current_price * stock_quantity)
+                            special_state[now_graph] = SPECIAL_ACTIVE       # モードをアクティブにする  
+                            cooldown[now_graph] = datetime.datetime.now()
+                            input_quantity = ""  # 入力リセット
 
             # Sキー　: 株を売る操作
             elif event.key == pygame.K_s and stocks[now_graph]["stock"] > 0:
+                bonus = 1.0
+
+                # 短時間モード中かつ制限時間内ならボーナス適用
+                if special_state[now_graph] == SPECIAL_ACTIVE and cooldown[now_graph]:
+                    elapsed = (datetime.datetime.now() - cooldown[now_graph]).total_seconds()
+                    if elapsed <= 3600:  # 1時間（3600秒）以内
+                        bonus = 1.5
+
+                # 売却価格の計算（10%手数料付き + ボーナス）
+                sell_price = int(current_price * 0.9 * bonus)
+
                 stocks[now_graph]["stock"] -= 1
                 stocks[now_graph]["sell_price"] += int(current_price * 0.9)  # 売却時の価格を記録
                 money += int(current_price * 0.9)  # 売却時は10%の手数料を引く
+                
+                # 売り切ったらモード解除
+                if stocks[now_graph]["stock"] == 0:
+                    special_state[now_graph] = SPECIAL_OFF
+                    cooldown[now_graph] = None
 
         # --- マウス入力 ---
-        # マウスボタンが押されたとき8
+        # マウスボタンが押されたとき
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if handle_rect.collidepoint(event.pos):
                 dragging = True
                 mouse_x_offset = event.pos[0] - handle_rect.x
             else:
                 for type_name, rect in button_map.items():
-                    if rect.collidepoint(event.pos):    # 
+                    if rect.collidepoint(event.pos):  
                         now_graph = type_name
                         scroll_index = max(0, len(select_code[now_graph]["value"]) - WINDOW_SIZE)
                         update_handle_position()
                         break
+
+            # 短時間モードのボタンがクリックされた場合
+            if SPECIAL_BUTTON_RECT.collidepoint(event.pos):
+                current = special_state[now_graph]
+                if current == SPECIAL_OFF:
+                    special_state[now_graph] = SPECIAL_SELECTING
+                elif current == SPECIAL_SELECTING:
+                    special_state[now_graph] = SPECIAL_OFF
+
         
         # マウスボタンが離されたとき
         elif event.type == pygame.MOUSEBUTTONUP:    
