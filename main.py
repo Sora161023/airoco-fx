@@ -6,6 +6,7 @@ import requests
 import datetime
 import numpy as np
 from typing import Tuple
+import constants
 
 WIDTH  = 500
 HEIGHT = 600
@@ -46,15 +47,11 @@ def get_data(sensor_name: str) -> Tuple[list, list, list, list]:
     curr_time = int(time.time())
     data = []
 
-    airoco_url = 'https://airoco.necolico.jp/data-api/day-csv'
-    id = 'CgETViZ2'
-    subscription_key = '6b8aa7133ece423c836c38af01c59880'
-
     # 過去7日間のデータを取得
     for day in range(7):
         tt = curr_time - 3600 * 24 * (7 - day)  # 24時間ごとに1週間分
         try:
-            res = requests.get(f'{airoco_url}?id={id}&subscription-key={subscription_key}&startDate={tt}')
+            res = requests.get(f'{constants.API_KEY}&startDate={tt}')
             res.raise_for_status()  # HTTPエラーをチェック
             raw_data = csv.reader(res.text.strip().splitlines())
 

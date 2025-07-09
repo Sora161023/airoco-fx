@@ -3,11 +3,10 @@ import json
 
 BASE_URL = "http://localhost:5000"  # サーバーのURLとポートに応じて変更
 
-def post_score(id: str, user_name: str, score: int):
+def post_score(user_name: str, score: int):
     """スコアを投稿"""
     url = BASE_URL
     payload = {
-        "id": id,
         "user_name": user_name,
         "score": score
     }
@@ -24,19 +23,27 @@ def get_top_ranking(limit: int = 10):
     print("Response:", json.dumps(response.json(), indent=2, ensure_ascii=False))
 
 
-def get_my_ranking(id: str):
+def get_my_ranking(user_name: str):
     """自分のランキングを取得"""
-    url = f"{BASE_URL}?id={id}"
+    url = f"{BASE_URL}?user_name={user_name}"
     response = requests.get(url)
-    print(f"GET /?id={id} - Status: {response.status_code}")
+    print(f"GET /?user_name={user_name} - Status: {response.status_code}")
     print("Response:", json.dumps(response.json(), indent=2, ensure_ascii=False))
 
 
+def register(user_name: str, register: bool = True):
+    url = f'{BASE_URL}?user_name={user_name}&register={register}'
+    response = requests.get(url)
+    print(response.text)
+
+
 if __name__ == "__main__":
+    register('id123')
+    register('sora161023')
     # 任意のテストケースをここで実行
-    post_score("user90", "000000000", 10)
-    post_score("user81", "bbbbbb", 20900)
-    post_score("user82", "af55555", 721)  # 上書きされるはず
+    post_score("sora161023", 1000)
+    post_score("bbbbbb", 20900)
+    post_score("af55555", 721)
 
     get_top_ranking(limit=5)
-    get_my_ranking("user123")
+    get_my_ranking("sora161023")
