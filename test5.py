@@ -3,6 +3,7 @@ import pygame
 import sys
 import time, csv, requests, datetime
 import numpy as np
+import math
 
 # 過去7日間のCO2濃度データをAPIから取得する関数 get_past_7_days_co2
 def get_airoco_data():
@@ -43,36 +44,12 @@ def get_airoco_data():
 
 # 既存のデータと新しいデータをマージする関数
 def update_data(now_timestamps, now_co2, now_temp, now_humid):
-    """APIから新しいデータを取得し、既存のデータとマージする"""
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] データの更新を開始します...")
     
     # データを再取得
-    new_timestamps, new_co2, new_temp, new_humid = get_airoco_data()
+    now_timestamps, now_co2, now_temp, now_humid = get_airoco_data()
     
-    # データ取得失敗時の処理
-    if not new_timestamps:
-        print("更新データが取得できませんでした。")
-        return now_timestamps, now_co2, now_temp, now_humid
-
-    # 現在の時刻を取得
-    last_timestamp = now_timestamps[-1] if now_timestamps else datetime.datetime.fromtimestamp(0)
-    
-    added_count = 0 # 追加したデータの数のカウント用
-
-    # 新しいデータの中に、まだ持っていないものがあれば追加する
-    for i, ts in enumerate(new_timestamps):     # enumerateでインデックスと時刻を同時に取得
-        if ts > last_timestamp:                 # 所持してた時刻より新しい時刻のデータの場合追加
-            now_timestamps.append(ts)
-            now_co2.append(new_co2[i])
-            now_temp.append(new_temp[i])
-            now_humid.append(new_humid[i])
-            added_count += 1
-    
-    # 追加したかどうかのログ
-    if added_count > 0:
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {added_count}件の新しいデータを追加しました。")
-    else:
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 新しいデータはありませんでした。")
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] データの更新が完了しました。")
         
     return now_timestamps, now_co2, now_temp, now_humid
 
@@ -101,7 +78,7 @@ COLOR_BUTTON_ACTIVE = (180, 220, 255)
 
 # --- データ更新イベント定義 ---
 UPDATE_DATA_EVENT = pygame.USEREVENT + 1
-UPDATE_INTERVAL_MS = 150000  # データ更新間隔を150秒に設定
+UPDATE_INTERVAL_MS = 150 * 1000  # データ更新間隔を150秒に設定(150 * 1000ミリ秒)
 pygame.time.set_timer(UPDATE_DATA_EVENT, UPDATE_INTERVAL_MS)
 
 # --- データ取得 ---
@@ -147,6 +124,8 @@ stocks = {
 }
 input_quantity = ""  # 数字を文字列で一時保存
 soecial_mode = False  # 短時間モードのフラグ
+now_price = 0   # 現在の価格
+last_price = 0  # 前の価格
 
 # --- レイアウト定義 ---
 GRAPH_RECT = pygame.Rect(50, 100, 400, 220)  # 基本のグラフ表示領域
@@ -157,6 +136,7 @@ UI_AREA_Y = SCROLL_BAR_RECT.bottom + 3  # UIエリアのY座標
 WINDOW_SIZE = 288   # 1日分のデータ数
 scroll_index = max(0, len(select_code[now_graph]["value"]) - WINDOW_SIZE)  # スクロール位置の最初の位置（例: 1200件-288件目でスクロール開始位置が912番目から）
 dragging = False
+scroll_counter = 0 # スクロールカウンター
 
 # ボタンの定義
 BUTTON_WIDTH, BUTTON_HEIGHT = 50, 30
@@ -273,7 +253,7 @@ def draw_graph(prices, times, start_index, unit):
     pygame.draw.rect(screen, COLOR_BLACK, GRAPH_RECT, 1)
 
 # ユーザーインターフェースを描画する関数
-def draw_ui(price, money_val, stock_val):
+def draw_ui(current_price, money_val, stock_val, now_price):
     status_y_start = UI_AREA_Y + 20
     state = special_state[now_graph]
 
@@ -300,12 +280,14 @@ def draw_ui(price, money_val, stock_val):
 
     else:
         # 通常UI
-        price_text = font.render(f"現在値: {price:.2f} rco", True, COLOR_BLACK)
+        price_text = font.render(f"現在値: {now_price:.2f} rco", True, COLOR_BLACK)
+        scrolled_price_text = font.render(f"表示価格: {current_price:.2f} rco", True, COLOR_BLACK) # スクロール時点の価格表示
         money_text = font.render(f"所持金: ¥{money_val:,}", True, COLOR_BLACK)
         stock_text = font.render(f"保有株: {stock_val[now_graph]['stock']}株", True, COLOR_BLACK)
         screen.blit(price_text, (GRAPH_RECT.left, status_y_start))
-        screen.blit(money_text, (GRAPH_RECT.left, status_y_start + 40))
-        screen.blit(stock_text, (GRAPH_RECT.left, status_y_start + 80))
+        screen.blit(scrolled_price_text, (GRAPH_RECT.left, status_y_start + 30))  # スクロール時点の価格表示
+        screen.blit(money_text, (GRAPH_RECT.left, status_y_start + 60))
+        screen.blit(stock_text, (GRAPH_RECT.left, status_y_start + 90))
 
         # 操作説明
         help_x = screen.get_width()/2 + 40
@@ -314,11 +296,11 @@ def draw_ui(price, money_val, stock_val):
         scroll_text = font.render("←→: スクロール", True, COLOR_BLACK)
         attention_text = font.render("※CO2株は1株単位、気温・湿度株は10株単位で購入", True, COLOR_BLACK)
         screen.blit(buy_text, (help_x, status_y_start))
-        screen.blit(sell_text, (help_x, status_y_start + 40))
-        screen.blit(scroll_text, (help_x, status_y_start + 80))
+        screen.blit(sell_text, (help_x, status_y_start + 30))
+        screen.blit(scroll_text, (help_x, status_y_start + 60))
         # 注意書きの中央揃え
         center = (screen.get_width() - attention_text.get_width()) // 2
-        screen.blit(attention_text, (center, status_y_start + 120))
+        screen.blit(attention_text, (center, status_y_start + 130))
 
 def draw_scrollbar():
     """スクロールバーを描画する"""
@@ -335,6 +317,22 @@ while running:
     active_unit = select_code[now_graph]['unit']        # 表示の単位（ppm, °C, %）
     max_scroll_len = len(active_prices) - WINDOW_SIZE   # スクロール可能な最大長さ
 
+    # 現在の値と前の値を更新
+    current_data_index = len(active_prices) - 1
+    if scroll_index >= 0:
+        last_price = now_price
+        now_price = active_prices[current_data_index]
+    else:
+        now_price = 0
+        last_price = 0
+    
+    # スクロール位置に基づいて表示価格を取得
+    current_price_index = min(scroll_index + WINDOW_SIZE - 1, len(active_prices) - 1)
+    if current_price_index >= 0:
+        current_price = active_prices[current_price_index]
+    else:
+        current_price = 0
+
     # --- イベント処理 ---    1フレーム毎にイベントを取得
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -345,6 +343,12 @@ while running:
             was_at_end = scroll_index >= max_scroll_len - 1
             # データを更新
             timestamps, co2_values, temp_values, humid_values = update_data(timestamps, co2_values, temp_values, humid_values)
+
+            # 新しいデータをselect_codeに反映
+            select_code["co2"]["value"] = co2_values
+            select_code["temp"]["value"] = temp_values
+            select_code["humid"]["value"] = humid_values
+
             # 末尾にスクロールしていた場合、更新後も末尾に留まるようにする
             if was_at_end:
                 scroll_index = max(0, len(active_prices) - WINDOW_SIZE)
@@ -352,9 +356,8 @@ while running:
 
         # --- キー入力イベント ---
         elif event.type == pygame.KEYDOWN:
-            current_price_index = min(scroll_index + WINDOW_SIZE - 1, len(active_prices) - 1)
-            if current_price_index < 0: continue
-            current_price = active_prices[current_price_index]
+
+            if now_price == 0: continue  # 現在の価格が0の場合は何もしない
 
             # 数字入力（0～9）
             if special_state[now_graph] == SPECIAL_SELECTING and event.unicode.isdigit():
@@ -367,7 +370,7 @@ while running:
                 print("Enterキーが押されました。")
 
             # Bキー : 株を買う操作
-            if event.key == pygame.K_b and money >= current_price:
+            if event.key == pygame.K_b and money >= now_price:
 
                 # 短時間対策
                 if special_state[now_graph] == SPECIAL_SELECTING:
@@ -381,10 +384,10 @@ while running:
                     else:
                         stock_quantity = 1
                         
-                    if money >= current_price * stock_quantity:  # 購入可能な金額か確認
+                    if money >= now_price * stock_quantity:  # 購入可能な金額か確認
                         stocks[now_graph]["stock"] += stock_quantity
-                        stocks[now_graph]["buy_price"] += int(current_price * stock_quantity)  # 購入時の価格を記録
-                        money -= int(current_price * stock_quantity)
+                        stocks[now_graph]["buy_price"] += int(now_price * stock_quantity)  # 購入時の価格を記録
+                        money -= int(now_price * stock_quantity)
             
             # Enterキー : 株の購入確定
             elif event.key == pygame.K_RETURN:
@@ -393,30 +396,29 @@ while running:
                         stock_quantity = int(input_quantity)
                         if now_graph == "temp" or now_graph == "humid":
                             stock_quantity *= 10
-                        if money >= current_price * stock_quantity:
+                        if money >= now_price * stock_quantity:
                             stocks[now_graph]["stock"] += stock_quantity
-                            stocks[now_graph]["buy_price"] += int(current_price * stock_quantity)  # 購入時の価格を記録
-                            money -= int(current_price * stock_quantity)
+                            stocks[now_graph]["buy_price"] += int(now_price * stock_quantity)  # 購入時の価格を記録
+                            money -= int(now_price * stock_quantity)
                             special_state[now_graph] = SPECIAL_ACTIVE       # モードをアクティブにする  
                             cooldown[now_graph] = datetime.datetime.now()
                             input_quantity = ""  # 入力リセット
 
             # Sキー　: 株を売る操作
             elif event.key == pygame.K_s and stocks[now_graph]["stock"] > 0:
-                bonus = 1.0
 
                 # 短時間モード中かつ制限時間内ならボーナス適用
                 if special_state[now_graph] == SPECIAL_ACTIVE and cooldown[now_graph]:
                     elapsed = (datetime.datetime.now() - cooldown[now_graph]).total_seconds()
                     if elapsed <= 3600:  # 1時間（3600秒）以内
-                        bonus = 1.5
+                        bonus = math.sqrt(1 + (3600 - elapsed) / 3600)  # ボーナス計算
 
                 # 売却価格の計算（10%手数料付き + ボーナス）
-                sell_price = int(current_price * 0.9 * bonus)
+                sell_price = int(now_price * 0.9 * bonus)
 
                 stocks[now_graph]["stock"] -= 1
-                stocks[now_graph]["sell_price"] += int(current_price * 0.9)  # 売却時の価格を記録
-                money += int(current_price * 0.9)  # 売却時は10%の手数料を引く
+                stocks[now_graph]["sell_price"] += int(now_price * 0.9)  # 売却時の価格を記録
+                money += int(now_price * 0.9)  # 売却時は10%
                 
                 # 売り切ったらモード解除
                 if stocks[now_graph]["stock"] == 0:
@@ -480,8 +482,8 @@ while running:
 
     # --- 画面描画 ---
     screen.fill(COLOR_BG)
-    current_price_index = min(scroll_index + WINDOW_SIZE - 1, len(active_prices) - 1)
-    current_price = active_prices[current_price_index] if current_price_index >= 0 else 0
+    # current_price_index = min(scroll_index + WINDOW_SIZE - 1, len(active_prices) - 1)
+    # current_price = active_prices[current_price_index] if current_price_index >= 0 else 0
 
     # 収益計算
     # total_assets = money + stocks[now_graph]["stock"] * current_price
@@ -489,7 +491,7 @@ while running:
 
     # 各株の損益を計算
     for graph_type in select_code:
-        possession_money = stocks[graph_type]["sell_price"] + (stocks[graph_type]["stock"] * current_price) # 現在の持ち金
+        possession_money = stocks[graph_type]["sell_price"] + (stocks[graph_type]["stock"] * now_price) # 現在の持ち金
         stocks[graph_type]["profit"] = possession_money - stocks[graph_type]["buy_price"]  # 損益 = 現在の持ち金 - 購入金額
         
 
@@ -497,7 +499,7 @@ while running:
     draw_buttons(now_graph)
     draw_header_info(stocks[now_graph]["profit"])
     draw_graph(active_prices, timestamps, scroll_index, active_unit)
-    draw_ui(current_price, money, stocks)
+    draw_ui(current_price, money, stocks, now_price)
     draw_scrollbar()
 
     pygame.display.flip()
