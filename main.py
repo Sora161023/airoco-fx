@@ -9,9 +9,11 @@ import numpy as np
 import math
 from typing import Tuple
 import constants
+from concurrent.futures import ThreadPoolExecutor
 
 # 過去7日間のCO2濃度データをAPIから取得する関数 get_past_7_days_co2
 def get_airoco_data():
+    global timestamps, co2_values, temp_values, humid_values
     curr_time = int(time.time())
     data = []
     
@@ -40,19 +42,26 @@ def get_airoco_data():
     co2_values = data[:, 0].tolist()  # CO2濃度
     temp_values = data[:, 1].tolist()  # 気温
     humid_values = data[:, 2].tolist()  # 湿度
-    
-    return timestamps, co2_values, temp_values, humid_values
 
 # 既存のデータと新しいデータをマージする関数
-def update_data(now_timestamps, now_co2, now_temp, now_humid):
+def update_data(first=False):
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] データの更新を開始します...")
-    
     # データを再取得
-    now_timestamps, now_co2, now_temp, now_humid = get_airoco_data()
-    
+    get_airoco_data()
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] データの更新が完了しました。")
-        
-    return now_timestamps, now_co2, now_temp, now_humid
+
+    # リストのアドレスを更新しておく
+    ## 参照渡しのためアドレス更新をしないと空リストを参照してしまう
+    global select_code
+    select_code['co2']['value']   = co2_values
+    select_code["humid"]['value'] = humid_values
+    select_code["temp"]['value']  = temp_values
+
+    # 初回のみhandle_positionを最後に(最新データ部分に移動)
+    if first:
+        global scroll_index
+        scroll_index = max(0, len(select_code[now_graph]['value']) - WINDOW_SIZE)
+        update_handle_position()
 
 
 # --- Pygame 初期化 ---
@@ -87,7 +96,7 @@ UPDATE_INTERVAL_MS = 150 * 1000  # データ更新間隔を150秒に設定(150 *
 pygame.time.set_timer(UPDATE_DATA_EVENT, UPDATE_INTERVAL_MS)
 
 # --- データ取得 ---
-timestamps, co2_values, temp_values, humid_values = get_airoco_data()
+timestamps, co2_values, temp_values, humid_values = [], [], [], []
 # 初期データ格納庫
 select_code = {
     "co2": {"value": co2_values, "label": "CO₂", "unit": "ppm"},
@@ -205,9 +214,9 @@ def draw_graph(prices, times, start_index, unit):
     visible_prices = prices[start_index:end_index]
     visible_times = times[start_index:end_index]
 
-    # データが不足している場合の処理
+    # データ取得中の処理
     if len(visible_prices) < 2:
-        msg = font.render("データが不足しています", True, COLOR_BLACK)
+        msg = font.render("データ取得中です...", True, COLOR_BLACK)
         screen.blit(msg, msg.get_rect(center=GRAPH_RECT.center))
         pygame.draw.rect(screen, COLOR_BLACK, GRAPH_RECT, 1) # 枠線だけ描画
         return
@@ -349,10 +358,12 @@ def special_mode_calculate(now_price, last_price, time, negotiation_price):
 
 # --- メインループ ---
 running = True
-update_handle_position()
+
+# 並列処理でデータ取得(初回のみデータ取得をしておく)
+executor = ThreadPoolExecutor(max_workers=2)
+executor.submit(update_data, first=True)
 
 while running:
-
     active_prices = select_code[now_graph]['value']     # 表示の対象（CO2, 気温, 湿度）
     active_unit = select_code[now_graph]['unit']        # 表示の単位（ppm, °C, %）
     max_scroll_len = len(active_prices) - WINDOW_SIZE   # スクロール可能な最大長さ
@@ -379,8 +390,8 @@ while running:
         # --- データ更新イベント ---
         elif event.type == UPDATE_DATA_EVENT:
             was_at_end = scroll_index >= max_scroll_len - 1
-            # データを更新
-            timestamps, co2_values, temp_values, humid_values = update_data(timestamps, co2_values, temp_values, humid_values)
+            # データを更新(2回目以降)
+            executor.submit(update_data)
 
             # 新しいデータをselect_codeに反映
             select_code["co2"]["value"] = co2_values
@@ -567,7 +578,7 @@ while running:
             special_money = stocks[graph_type]["special_stocks"] * stocks[graph_type]["negotiation_price"]
             possession_money += special_money
 
-        stocks[graph_type]["profit"] = int(possession_money - stocks[graph_type]["buy_price"])  # 損益 = 現在の持ち金 - 購入金額
+        stocks[graph_type]["profit"] = possession_money - stocks[graph_type]["buy_price"]  # 損益 = 現在の持ち金 - 購入金額
         
     # 合計収益計算
     total_profit = sum(stocks[graph_type]["profit"] for graph_type in stocks)
