@@ -567,10 +567,6 @@ while running:
     # --- 画面描画 ---
     screen.fill(COLOR_BG)
 
-    # 収益計算
-    # total_assets = money + stocks[now_graph]["stock"] * current_price
-    # profit = total_assets - INITIAL_MONEY
-
     # 各株の損益を計算
     for graph_type in select_code:
         possession_money = stocks[graph_type]["sell_price"] + (stocks[graph_type]["stock"] * price_desk[graph_type]["now_price"])  # 現在の持ち金 = 売却済み資産 + 現在の株価 * 保有株数
@@ -578,7 +574,7 @@ while running:
             special_money = stocks[graph_type]["special_stocks"] * stocks[graph_type]["negotiation_price"]
             possession_money += special_money
 
-        stocks[graph_type]["profit"] = possession_money - stocks[graph_type]["buy_price"]  # 損益 = 現在の持ち金 - 購入金額
+        stocks[graph_type]["profit"] = int(possession_money - stocks[graph_type]["buy_price"])  # 損益 = 現在の持ち金 - 購入金額
         
     # 合計収益計算
     total_profit = sum(stocks[graph_type]["profit"] for graph_type in stocks)
