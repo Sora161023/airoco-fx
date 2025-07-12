@@ -38,10 +38,8 @@ class DB:
         log_time = self._get_log_time()
         # dbに登録されているか確認
         if self._execute(self.SEARCH_BY_USER, [user_name]):
-            # 登録されているスコアより高ければ更新
-            if self._execute(self.COMPARE_SCORES_BY_USER, [score, user_name]):
-                # 更新
-                self._execute(self.UPDATE_SCORE, [log_time, score, user_name])
+            # 更新
+            self._execute(self.UPDATE_SCORE, [log_time, score, user_name])
         # dbに登録されていなければ追加
         else:
             self._execute(self.INSERT_NEW_SCORE, [log_time, user_name, score])

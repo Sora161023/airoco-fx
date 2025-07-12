@@ -2,3 +2,5 @@ constants.py
 users.db
 /__pycache__
 ranking.db
+*.db
+ranking.db

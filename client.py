@@ -39,11 +39,11 @@ def register(user_name: str, register: bool = True):
 
 if __name__ == "__main__":
     register('id123')
-    register('sora161023')
+    register('admin')
     # 任意のテストケースをここで実行
-    post_score("sora161023", 1000)
+    post_score("admin", 998877665544)
     post_score("bbbbbb", 20900)
     post_score("af55555", 721)
 
     get_top_ranking(limit=5)
-    get_my_ranking("sora161023")
+    get_my_ranking("admin")

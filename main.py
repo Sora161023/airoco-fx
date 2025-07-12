@@ -11,6 +11,29 @@ from typing import Tuple
 import constants
 from concurrent.futures import ThreadPoolExecutor
 
+API_SERVER_URL = 'http://localhost:5000'
+
+def get_my_money(user_name: str) -> None:
+    global money
+    try:
+        res = requests.get(f'{API_SERVER_URL}?user_name={user_name}')
+        if res.status_code == 200:
+            data = res.json()
+            if data:
+                money = list(data.values())[0]['score']
+                return
+    except Exception as e:
+        print('所持金取得エラー:', e)
+    money = 10000
+
+def save_my_money(user_name: str, money: int):
+    try:
+        payload = {'user_name': user_name, 'score': money}
+        res = requests.post(f'{API_SERVER_URL}', json=payload)
+        print('保存完了', res.status_code)
+    except Exception as e:
+        print('保存エラー:', e)
+
 # 過去7日間のCO2濃度データをAPIから取得する関数 get_past_7_days_co2
 def get_airoco_data():
     global timestamps, co2_values, temp_values, humid_values
@@ -55,6 +78,10 @@ def update_data(first=False):
     select_code['co2']['value']   = co2_values
     select_code["humid"]['value'] = humid_values
     select_code["temp"]['value']  = temp_values
+
+    print(f"CO2の初期データ数:  {len(co2_values)}件")
+    print(f"気温の初期データ数: {len(temp_values)}件")
+    print(f"湿度の初期データ数: {len(humid_values)}件")
 
     # 初回のみhandle_positionを最後に(最新データ部分に移動)
     if first:
@@ -103,9 +130,7 @@ select_code = {
     "temp": {"value": temp_values, "label": "気温", "unit": "°C"},
     "humid": {"value": humid_values, "label": "湿度", "unit": "%"}
 }
-print(f"CO2の初期データ数: {len(co2_values)}件")
-print(f"気温の初期データ数: {len(temp_values)}件")
-print(f"湿度の初期データ数: {len(humid_values)}件")
+
 
 now_graph = "co2"  # 現在表示中のグラフの種類
 
@@ -128,8 +153,7 @@ cooldown = {
 
 
 # --- ゲーム変数 ---
-INITIAL_MONEY = 10000 # 初期所持金
-money = INITIAL_MONEY
+money = 0
 stocks = {
     "co2": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0, "special_stocks": 0, "negotiation_price" :0},      # CO2株の保有数と合計購入価格と合計売値金と特別株数と損益
     "temp": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0, "special_stocks": 0, "negotiation_price" :0},      # 気温株の保有数と合計購入価格と合計売値金と特別株数と損益
@@ -137,9 +161,9 @@ stocks = {
 }
 input_quantity = ""  # 数字を文字列で一時保存
 price_desk = {
-    "co2": {"now_price": 0.0, "last_price": 0.0},   # CO2株の現在価格と前回価格
-    "temp": {"now_price": 0.0, "last_price": 0.0},  # 気温株の現在価格と前回価格
-    "humid": {"now_price": 0.0, "last_price": 0.0}  # 湿度株の現在価格と前回価格
+    "co2"  : {"now_price": 0.0, "last_price": 0.0},  # CO2株の現在価格と前回価格
+    "temp" : {"now_price": 0.0, "last_price": 0.0},  # 気温株の現在価格と前回価格
+    "humid": {"now_price": 0.0, "last_price": 0.0},  # 湿度株の現在価格と前回価格
 }
 
 # --- レイアウト定義 ---
@@ -180,7 +204,11 @@ def draw_header_info(profit):
         profit_color, sign = COLOR_BLUE, "+"
     else:
         profit_color, sign = COLOR_RED, ""
+<<<<<<< Updated upstream
     profit_text = font_l.render(f"累計損益: {sign}{profit:,}rco", True, profit_color)
+=======
+    profit_text = font_l.render(f"累計損益: ¥{sign}{profit:,.1f}", True, profit_color)
+>>>>>>> Stashed changes
     screen.blit(profit_text, (GRAPH_RECT.right - profit_text.get_width(), 60))
 
     # 区切り線を描画
@@ -358,10 +386,12 @@ def special_mode_calculate(now_price, last_price, time, negotiation_price):
 
 # --- メインループ ---
 running = True
+user_name = 'admin'
 
 # 並列処理でデータ取得(初回のみデータ取得をしておく)
 executor = ThreadPoolExecutor(max_workers=2)
 executor.submit(update_data, first=True)
+executor.submit(get_my_money, user_name)
 
 while running:
     active_prices = select_code[now_graph]['value']     # 表示の対象（CO2, 気温, 湿度）
@@ -476,8 +506,6 @@ while running:
                 if special_state[now_graph] == SPECIAL_SELECTING:
                     if input_quantity.isdigit() and int(input_quantity) > 0:    # 数字が入力されているか確認
                         stock_quantity = int(input_quantity)
-                        # if now_graph == "temp" or now_graph == "humid":
-                        #     stock_quantity *= 10
                         if money >= price_desk[now_graph]["now_price"] * stock_quantity:
                             stocks[now_graph]["special_stocks"] += stock_quantity  # 特別株に追加
                             stocks[now_graph]["buy_price"] += int(price_desk[now_graph]['now_price'] * stock_quantity) # 購入価格を記録
@@ -582,6 +610,8 @@ while running:
         
     # 合計収益計算
     total_profit = sum(stocks[graph_type]["profit"] for graph_type in stocks)
+
+
 
     # 描画関数の呼び出し
     draw_buttons(now_graph)
