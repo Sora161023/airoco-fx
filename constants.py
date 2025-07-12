@@ -1,1 +1,0 @@
-API_KEY = 'https://airoco.necolico.jp/data-api/day-csv?id=CgETViZ2&subscription-key=6b8aa7133ece423c836c38af01c59880'
