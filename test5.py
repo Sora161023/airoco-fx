@@ -122,9 +122,11 @@ stocks = {
     "humid": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0, "special_stocks": 0, "negotiation_price" :0}       # 湿度株の保有数と合計購入価格と合計売値金と特別株数と損益
 }
 input_quantity = ""  # 数字を文字列で一時保存
-soecial_mode = False  # 短時間モードのフラグ
-now_price = 0   # 現在の価格
-last_price = 0  # 前の価格
+price_desk = {
+    "co2": {"now_price": 0.0, "last_price": 0.0},   # CO2株の現在価格と前回価格
+    "temp": {"now_price": 0.0, "last_price": 0.0},  # 気温株の現在価格と前回価格
+    "humid": {"now_price": 0.0, "last_price": 0.0}  # 湿度株の現在価格と前回価格
+}
 
 # --- レイアウト定義 ---
 GRAPH_RECT = pygame.Rect(50, 100, 400, 220)  # 基本のグラフ表示領域
@@ -274,7 +276,7 @@ def draw_ui(current_price, money_val, stock_val, now_price):
         negotiated_price_text = font.render(f"交渉価格: {negotiated_price_display:.2f} rco", True, COLOR_BLACK)
         scrolled_price_text = font.render(f"表示価格: {current_price:.2f} rco", True, COLOR_BLACK) # スクロール時点の価格表示
 
-        stock_text = font.render(f"保有株: {stock_val[now_graph]['special_stocks']}株", True, COLOR_BLACK)
+        stock_text = font.render(f"短期株保有数: {stock_val[now_graph]['special_stocks']}株", True, COLOR_BLACK)
         remaining = 3600 - int((datetime.datetime.now() - cooldown[now_graph]).total_seconds())
         minutes = max(0, remaining // 60)
         seconds = max(0, remaining % 60)
@@ -350,14 +352,12 @@ while running:
     active_unit = select_code[now_graph]['unit']        # 表示の単位（ppm, °C, %）
     max_scroll_len = len(active_prices) - WINDOW_SIZE   # スクロール可能な最大長さ
 
-    # 現在の値と前の値を更新
-    current_data_index = len(active_prices) - 1
-    if scroll_index >= 0:
-        last_price = now_price
-        now_price = active_prices[current_data_index]
-    else:
-        now_price = 0
-        last_price = 0
+    # 各現在の値と前の値を更新
+    for graph_type in select_code:
+        current_prices = select_code[graph_type]['value']
+        if len(current_prices) > 0:
+            price_desk[graph_type]['now_price'] = current_prices[-1]
+            price_desk[graph_type]['last_price'] = current_prices[-2] if len(current_prices) > 1 else 0
     
     # スクロール位置に基づいて表示価格を取得
     current_price_index = min(scroll_index + WINDOW_SIZE - 1, len(active_prices) - 1)
@@ -382,17 +382,37 @@ while running:
             select_code["temp"]["value"] = temp_values
             select_code["humid"]["value"] = humid_values
 
-            # 短時間モードがアクティブであれば交渉価格を更新
-            if special_state[now_graph] == SPECIAL_ACTIVE and cooldown[now_graph]:
-                elapsed = (datetime.datetime.now() - cooldown[now_graph]).total_seconds()
-                now_time = elapsed / 3600.0
+            # 全てのグラフタイプに対して短時間モードの状態をチェックし、交渉価格の更新と強制売却を行う
+            for graph_type in select_code:
+                # そのグラフタイプの最新価格と過去価格を取得
+                current_graph_prices = select_code[graph_type]["value"]
+                graph_now_price = current_graph_prices[-1] if len(current_graph_prices) > 0 else 0
+                graph_last_price = current_graph_prices[-2] if len(current_graph_prices) > 1 else 0
 
-                base_negotiation_price = stocks[now_graph]["negotiation_price"]
-                # # 短時間モード開始後、最初のデータ更新時（またはnegotiation_priceがリセットされている場合）は、now_priceを基準とする
+                # 短時間モードがアクティブであれば交渉価格を更新
+                if special_state[graph_type] == SPECIAL_ACTIVE and cooldown[graph_type]:
+                    elapsed = (datetime.datetime.now() - cooldown[graph_type]).total_seconds()
+                    now_time = elapsed / 3600.0
 
-                new_negotiation_price = special_mode_calculate(now_price, last_price, now_time, base_negotiation_price)
-                stocks[now_graph]["negotiation_price"] = float(new_negotiation_price)
-                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Negotiation Price Updated for {now_graph}: {new_negotiation_price}")
+                    if elapsed > 3600 and stocks[graph_type]["special_stocks"] > 0:
+                        forced_sale_price = int(stocks[graph_type]["special_stocks"] * stocks[graph_type]["negotiation_price"] * 0.9)  # 強制売却価格
+                        money += forced_sale_price                                                                                  # 売却価格を所持金に加算
+                        stocks[graph_type]["sell_price"] += forced_sale_price                                                        # 売却価格を記録
+                        stocks[graph_type]["special_stocks"] = 0                                                                     # 強制売却後は特別株を0にする
+                        special_state[graph_type] = SPECIAL_OFF                                                                      # モードを解除
+                        cooldown[graph_type] = None                                                                                  # クールダウンをリセット
+                        stocks[graph_type]["negotiation_price"] = 0.0                                                                # 交渉価格をリセット
+                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 強制売却が発生しました。特別株を売却しました。")
+
+                    else:
+                        base_negotiation_price = stocks[graph_type]["negotiation_price"]
+                        # # 短時間モード開始後、最初のデータ更新時（またはnegotiation_priceがリセットされている場合）は、now_priceを基準とする
+
+                        new_negotiation_price = special_mode_calculate(graph_now_price, graph_last_price, now_time, base_negotiation_price)
+                        stocks[graph_type]["negotiation_price"] = float(new_negotiation_price)
+                        # 確認のためgraph_now_price, graph_last_price, now_time, base_negotiation_priceを表示
+                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {graph_type} Negotiation Price Updated: {new_negotiation_price}, Base: {base_negotiation_price}, Now Price: {graph_now_price}, Last Price: {graph_last_price}, Time Elapsed: {now_time:.2f} hours")
+                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Negotiation Price Updated for {now_graph}: {new_negotiation_price}")
 
             # 末尾にスクロールしていた場合、更新後も末尾に留まるようにする
             if was_at_end:
@@ -402,7 +422,7 @@ while running:
         # --- キー入力イベント ---
         elif event.type == pygame.KEYDOWN:
 
-            if now_price == 0: continue  # 現在の価格が0の場合は何もしない
+            if price_desk[now_graph]['now_price'] == 0: continue  # 現在の価格が0の場合は何もしない
 
             # 数字入力（0～9）
             if special_state[now_graph] == SPECIAL_SELECTING and event.unicode.isdigit():
@@ -415,7 +435,7 @@ while running:
                 print("Enterキーが押されました。")
 
             # Bキー : 株を買う操作
-            if event.key == pygame.K_b and money >= now_price:
+            if event.key == pygame.K_b and money >= price_desk[now_graph]['now_price']:
 
                 # 短時間対策
                 if special_state[now_graph] == SPECIAL_SELECTING:
@@ -429,51 +449,53 @@ while running:
                     else:
                         stock_quantity = 1
                         
-                    if money >= now_price * stock_quantity:  # 購入可能な金額か確認
+                    if money >= price_desk[now_graph]['now_price'] * stock_quantity:
                         stocks[now_graph]["stock"] += stock_quantity
-                        stocks[now_graph]["buy_price"] += int(now_price * stock_quantity)  # 購入時の価格を記録
-                        money -= int(now_price * stock_quantity)
+                        stocks[now_graph]["buy_price"] += int(price_desk[now_graph]['now_price'] * stock_quantity)
+                        money -= int(price_desk[now_graph]['now_price'] * stock_quantity)
+                        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {now_graph} 株を {stock_quantity} 株(1株{int(price_desk[now_graph]['now_price'])}rco) 購入しました。")
             
             # Enterキー : 株の購入確定
             elif event.key == pygame.K_RETURN:
                 if special_state[now_graph] == SPECIAL_SELECTING:
                     if input_quantity.isdigit() and int(input_quantity) > 0:    # 数字が入力されているか確認
                         stock_quantity = int(input_quantity)
-                        if now_graph == "temp" or now_graph == "humid":
-                            stock_quantity *= 10
-                        if money >= now_price * stock_quantity:
+                        # if now_graph == "temp" or now_graph == "humid":
+                        #     stock_quantity *= 10
+                        if money >= price_desk[now_graph]["now_price"] * stock_quantity:
                             stocks[now_graph]["special_stocks"] += stock_quantity  # 特別株に追加
-                            stocks[now_graph]["buy_price"] += int(now_price * stock_quantity)  # 購入時の価格を記録
-                            money -= int(now_price * stock_quantity)
+                            stocks[now_graph]["buy_price"] += int(price_desk[now_graph]['now_price'] * stock_quantity) # 購入価格を記録
+                            money -= int(price_desk[now_graph]["now_price"] * stock_quantity) # 所持金から購入価格を引く
                             special_state[now_graph] = SPECIAL_ACTIVE       # モードをアクティブにする  
-                            stocks[now_graph]["negotiation_price"] = now_price  # 交渉価格を現在の価格に設定
+                            stocks[now_graph]["negotiation_price"] = price_desk[now_graph]["now_price"]  # 交渉価格を現在の価格に設定
                             cooldown[now_graph] = datetime.datetime.now()
                             input_quantity = ""  # 入力リセット
 
             # Sキー　: 株を売る操作
-            elif event.key == pygame.K_s and (stocks[now_graph]["stock"] > 0 or stocks[now_graph]["special_stocks"] > 0):
-
-                # 短時間モード中かつ制限時間内ならボーナス適用
-                if special_state[now_graph] == SPECIAL_ACTIVE and cooldown[now_graph]:
-                    elapsed = (datetime.datetime.now() - cooldown[now_graph]).total_seconds()
-                    if elapsed <= 3600:  # 1時間（3600秒）以内
+            elif event.key == pygame.K_s:
+                # 短時間モード中ならボーナス適用
+                if special_state[now_graph] == SPECIAL_ACTIVE:
+                    if stocks[now_graph]["special_stocks"] > 0:
                         sell_price_base = stocks[now_graph]["negotiation_price"]
                         # 売却価格を計算
                         sell_price = int(sell_price_base * 0.9) # 10%手数料を引く
                         stocks[now_graph]["special_stocks"] -= 1
+                        stocks[now_graph]["sell_price"] += sell_price   # 売却時の価格を記録
+                        money += int(sell_price)                        # 売却時は10%手数料を引いた価格を加算
+                    
+                        # 売り切ったらモード解除
+                        if stocks[now_graph]["special_stocks"] == 0:
+                            special_state[now_graph] = SPECIAL_OFF
+                            cooldown[now_graph] = None
+                            stocks[now_graph]["negotiation_price"] = 0.0
 
+                # 通常モード
                 else:
-                    sell_price = int(now_price * 0.9)       # 10%手数料を引く
-                    stocks[now_graph]["stock"] -= 1
-
-                stocks[now_graph]["sell_price"] += sell_price   # 売却時の価格を記録
-                money += int(sell_price)                        # 売却時は10%手数料を引いた価格を加算
-                
-                # 売り切ったらモード解除
-                if stocks[now_graph]["special_stocks"] == 0:
-                    special_state[now_graph] = SPECIAL_OFF
-                    cooldown[now_graph] = None
-                    stocks[now_graph]["negotiation_price"] = 0.0
+                    if stocks[now_graph]["stock"] > 0:
+                        sell_price = int(price_desk[now_graph]["now_price"] * 0.9)  # 10%手数料を引く
+                        stocks[now_graph]["stock"] -= 1
+                        stocks[now_graph]["sell_price"] += sell_price   # 売却時の価格を記録
+                        money += int(sell_price)                        # 売却時は10%手数料を引いた価格を加算
 
         # --- マウス入力 ---
         # マウスボタンが押されたとき
@@ -539,18 +561,21 @@ while running:
 
     # 各株の損益を計算
     for graph_type in select_code:
-        possession_money = stocks[graph_type]["sell_price"] + (stocks[graph_type]["stock"] * now_price) # 現在の持ち金 = 売却価格 + 現在の株価 * 保有株数
+        possession_money = stocks[graph_type]["sell_price"] + (stocks[graph_type]["stock"] * price_desk[graph_type]["now_price"])  # 現在の持ち金 = 売却済み資産 + 現在の株価 * 保有株数
         if special_state[graph_type] == SPECIAL_ACTIVE:
             special_money = stocks[graph_type]["special_stocks"] * stocks[graph_type]["negotiation_price"]
             possession_money += special_money
+
         stocks[graph_type]["profit"] = possession_money - stocks[graph_type]["buy_price"]  # 損益 = 現在の持ち金 - 購入金額
         
+    # 合計収益計算
+    total_profit = sum(stocks[graph_type]["profit"] for graph_type in stocks)
 
-    # 描画関数の呼び出しs
+    # 描画関数の呼び出し
     draw_buttons(now_graph)
     draw_header_info(stocks[now_graph]["profit"])
     draw_graph(active_prices, timestamps, scroll_index, active_unit)
-    draw_ui(current_price, money, stocks, now_price)
+    draw_ui(current_price, money, stocks, price_desk[now_graph]['now_price'])
     draw_scrollbar()
 
     pygame.display.flip()
