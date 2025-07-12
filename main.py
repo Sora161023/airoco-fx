@@ -204,7 +204,7 @@ def draw_header_info(profit):
         profit_color, sign = COLOR_BLUE, "+"
     else:
         profit_color, sign = COLOR_RED, ""
-    profit_text = font_l.render(f"累計損益: {sign}{profit:,}rco", True, profit_color)
+    profit_text = font_l.render(f"累計損益: {sign}{profit:,.1f}rco", True, profit_color)
     screen.blit(profit_text, (GRAPH_RECT.right - profit_text.get_width(), 60))
 
     # 区切り線を描画
