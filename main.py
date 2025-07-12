@@ -299,7 +299,7 @@ def draw_ui(current_price, money_val, stock_val, now_price):
     if state == SPECIAL_SELECTING:
         price_text = font.render(f"現在値: {now_price:.2f} rco", True, COLOR_BLACK)
         money_text = font.render(f"所持金: ¥{money_val:,}", True, COLOR_BLACK)
-        select_text = font.render("購入株数を選択してください", True, COLOR_RED)
+        select_text = font.render("購入株数を入力してください", True, COLOR_RED)
         input_display = input_quantity if input_quantity else "_"
         input_text = font.render(f"選択株数: {input_display}", True, COLOR_BLUE)
 
@@ -307,6 +307,12 @@ def draw_ui(current_price, money_val, stock_val, now_price):
         screen.blit(money_text, (GRAPH_RECT.left, status_y_start + 30))
         screen.blit(select_text, (GRAPH_RECT.left, status_y_start + 60))
         screen.blit(input_text, (GRAPH_RECT.left, status_y_start + 90))
+
+        help_x = screen.get_width()/2 + 40
+        buy_text = font.render("Enter: 購入確定", True, COLOR_BLACK)
+        sell_text = font.render("BS: 削除", True, COLOR_BLACK)
+        screen.blit(buy_text, (help_x, status_y_start))
+        screen.blit(sell_text, (help_x, status_y_start + 30))
 
     # 短時間モード中
     elif state == SPECIAL_ACTIVE:
@@ -559,7 +565,6 @@ while running:
                 elif current == SPECIAL_SELECTING:
                     special_state[now_graph] = SPECIAL_OFF
 
-        
         # マウスボタンが離されたとき
         elif event.type == pygame.MOUSEBUTTONUP:    
             dragging = False
