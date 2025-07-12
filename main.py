@@ -363,13 +363,6 @@ while running:
         if len(current_prices) > 0:
             price_desk[graph_type]['now_price'] = current_prices[-1]
             price_desk[graph_type]['last_price'] = current_prices[-2] if len(current_prices) > 1 else 0
-    # current_data_index = len(active_prices) - 1
-    # if scroll_index >= 0:
-    #     last_price = now_price
-    #     now_price = active_prices[current_data_index]
-    # else:
-    #     now_price = 0
-    #     last_price = 0
     
     # スクロール位置に基づいて表示価格を取得
     current_price_index = min(scroll_index + WINDOW_SIZE - 1, len(active_prices) - 1)
@@ -566,10 +559,6 @@ while running:
 
     # --- 画面描画 ---
     screen.fill(COLOR_BG)
-
-    # 収益計算
-    # total_assets = money + stocks[now_graph]["stock"] * current_price
-    # profit = total_assets - INITIAL_MONEY
 
     # 各株の損益を計算
     for graph_type in select_code:
