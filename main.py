@@ -4,8 +4,10 @@ import requests
 # import threading
 from concurrent.futures import ThreadPoolExecutor
 import time
+import csv
 
-airoco_url = 'https://airoco.necolico.jp/data-api/latest?id=CgETViZ2&subscription-key=6b8aa7133ece423c836c38af01c59880'
+# airoco_url = 'https://airoco.necolico.jp/data-api/latest?id=CgETViZ2&subscription-key=6b8aa7133ece423c836c38af01c59880'
+airoco_url = 'https://airoco.necolico.jp/data-api/day-csv?id=CgETViZ2&subscription-key=6b8aa7133ece423c836c38af01c59880'
 
 sensors = {
     'spare-2'   : 0,
@@ -19,6 +21,47 @@ sensors = {
     'R3-B1F_EH' : 8,
 }
 
+sensor_names = [
+    'R3-401', 
+    'R3-301', 
+    'R3-3F_EH', 
+    'R3-4F_EH', 
+    'R3-403', 
+    'R3-B1F_EH', 
+]
+
+WIDTH = 800
+HEIGHT = 600
+
+# グラフの設定
+max_value = 2000
+min_value = 0
+graph_width = WIDTH - 100
+graph_height = HEIGHT - 100
+graph_x = 50
+graph_y = 50
+
+data = []
+
+
+def fetch_data(sensor_name):
+    try:
+        global data
+        print('fetching data...')
+        curr_time = int(time.time())
+        tt = curr_time - 3600 * 24
+
+        res = requests.get(f'{airoco_url}&startDate={tt}')
+        raw_data = csv.reader(res.text.strip().splitlines())
+        for row in raw_data:
+            if row[1] == 'Ｒ３ー３０１':
+                data.append(list(map(float, row[3:7])))
+        print(data)
+
+    except:
+        print('error')
+
+
 def get_data(sensor_name):
     try:
         print('getting data...')
@@ -29,9 +72,10 @@ def get_data(sensor_name):
     except Exception as e:
         print(f'Error fetching data: {e}')
 
+
 def main():
-    WIDTH = 800
-    HEIGHT = 600
+    # pygameの初期化
+
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Airoco FX")
@@ -43,8 +87,12 @@ def main():
     dx = 0
     executer = ThreadPoolExecutor(max_workers=2)
 
+    # 更新間隔
+    fetch_interval = 10
     last_fetch_time = 0
-    fetch_interval = 5
+
+    # executer.submit(fetch_data, 'R3-3F_EH')
+    fetch_data('R3-3F_EH')
 
     while running:
         clock.tick(fps)
@@ -67,6 +115,9 @@ def main():
                 if event.key == K_d:
                     executer.submit(get_data, 'R3-3F_EH')
                     last_fetch_time = current_time
+
+                if event.key == K_ESCAPE:
+                    running = False
 
     pygame.quit()
     return 0
