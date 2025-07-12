@@ -34,7 +34,6 @@ def get_airoco_data():
 
     if not data:
         print("This sensor is not connected or no data available.")
-        return [], [], [], []
 
     data = np.array(data)
 
@@ -95,8 +94,9 @@ UPDATE_DATA_EVENT = pygame.USEREVENT + 1
 UPDATE_INTERVAL_MS = 150 * 1000  # データ更新間隔を150秒に設定(150 * 1000ミリ秒)
 pygame.time.set_timer(UPDATE_DATA_EVENT, UPDATE_INTERVAL_MS)
 
-# --- データ取得 ---
+# 各値の初期値は空リスト
 timestamps, co2_values, temp_values, humid_values = [], [], [], []
+
 # 初期データ格納庫
 select_code = {
     "co2": {"value": co2_values, "label": "CO₂", "unit": "ppm"},
