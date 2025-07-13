@@ -375,12 +375,12 @@ def special_mode_calculate(now_price, last_price, time, negotiation_price):
     if last_price == 0:
         rate = 0.0
     else:
-        rate = (now_price - last_price) / last_price    # 価格変動率を計算
+        rate = (now_price - last_price) / last_price    # 価格変動率 = (現在価格 - 前回価格) / 前回価格
 
     bonus = 1 + (rate * magnification)                  # ボーナス計算
 
     if negotiation_price == 0:
-        new_negotiation_price = int(now_price * bonus)      # ボーナスを適用した価格
+        new_negotiation_price = int(last_price * bonus) # ボーナスを適用した価格
     else:
         new_negotiation_price = int(negotiation_price * bonus)
 
