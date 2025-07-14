@@ -131,7 +131,6 @@ select_code = {
     "humid": {"value": humid_values, "label": "湿度", "unit": "%"}
 }
 
-
 now_graph = "co2"  # 現在表示中のグラフの種類
 
 
@@ -188,6 +187,11 @@ button_map = {
     'temp': TEMP_BUTTON_RECT,
     'humid': HUMID_BUTTON_RECT,
 }
+
+# 所持金不足メッセージ
+input_quantity = ""  # 数字を文字列で一時保存
+no_money_message = "" # 所持金不足メッセージ
+message_display_time = 0 # メッセージ表示開始時間
 
 def update_handle_position():
     """scroll_indexに基づいてスクロールバーハンドルの位置を更新する"""
@@ -319,7 +323,11 @@ def draw_ui(current_price, money_val, stock_val, now_price):
         max_quantity = (money_val // current_price) if current_price > 0 else 0
         max_quantity_text = font.render(f"最大購入可能株数: {int(max_quantity)}", True, COLOR_BLACK)
         screen.blit(max_quantity_text, (help_x, status_y_start + 90))
-        
+
+        # 所持金不足メッセージの表示
+        if no_money_message and (pygame.time.get_ticks() - message_display_time < 3000): # 3秒間表示
+            message_surf = font.render(no_money_message, True, COLOR_RED)
+            screen.blit(message_surf, (GRAPH_RECT.left, status_y_start + 125))
 
     # 短時間モード中
     elif state == SPECIAL_ACTIVE:
@@ -406,6 +414,10 @@ while running:
     active_prices = select_code[now_graph]['value']     # 表示の対象（CO2, 気温, 湿度）
     active_unit = select_code[now_graph]['unit']        # 表示の単位（ppm, °C, %）
     max_scroll_len = len(active_prices) - WINDOW_SIZE   # スクロール可能な最大長さ
+
+    # メッセージの表示時間を過ぎたらクリア
+    if pygame.time.get_ticks() - message_display_time > 3000:
+        no_money_message = ""  # 所持金不足メッセージをクリア
 
     # 各現在の値と前の値を更新
     for graph_type in select_code:
@@ -523,6 +535,9 @@ while running:
                             stocks[now_graph]["negotiation_price"] = price_desk[now_graph]["now_price"]  # 交渉価格を現在の価格に設定
                             cooldown[now_graph] = datetime.datetime.now()
                             input_quantity = ""  # 入力リセット
+                        else:
+                            no_money_message = "購入株数が多いです。所持金が足りません。"
+                            message_display_time = pygame.time.get_ticks() # 現在時刻を記録
 
             # Sキー　: 株を売る操作
             elif event.key == pygame.K_s:
