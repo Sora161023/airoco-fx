@@ -34,12 +34,25 @@ def get_my_ranking(user_name: str):
 def register(user_name: str, register: bool = True):
     url = f'{BASE_URL}?user_name={user_name}&register={register}'
     response = requests.get(url)
-    print(response.text)
+
+    if response.status_code != 200:
+        print(f"[ERROR] status={response.status_code}")
+        return False, "Request failed"
+
+    try:
+        data = response.json()
+        success = data.get("success", False)
+        message = data.get("message", "")
+        print(f"[{'OK' if success else 'NG'}] {message}")
+        return success, message
+    except json.JSONDecodeError:
+        print("[ERROR] Could not decode response.")
+        return False, "Invalid response"
+
 
 
 if __name__ == "__main__":
-    register('id123')
-    register('admin')
+    success, msg = register('id123')
     # 任意のテストケースをここで実行
     post_score("admin", 998877665544)
     post_score("bbbbbb", 20900)
