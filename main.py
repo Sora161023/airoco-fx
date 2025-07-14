@@ -296,6 +296,7 @@ def draw_ui(current_price, money_val, stock_val, now_price):
     status_y_start = UI_AREA_Y + 20
     state = special_state[now_graph]
 
+    # 入力
     if state == SPECIAL_SELECTING:
         price_text = font.render(f"現在値: {now_price:.2f} rco", True, COLOR_BLACK)
         money_text = font.render(f"所持金: ¥{money_val:,}", True, COLOR_BLACK)
@@ -313,6 +314,12 @@ def draw_ui(current_price, money_val, stock_val, now_price):
         sell_text = font.render("BS: 削除", True, COLOR_BLACK)
         screen.blit(buy_text, (help_x, status_y_start))
         screen.blit(sell_text, (help_x, status_y_start + 30))
+
+        # 購入できる最大を表示
+        max_quantity = (money_val // current_price) if current_price > 0 else 0
+        max_quantity_text = font.render(f"最大購入可能株数: {int(max_quantity)}", True, COLOR_BLACK)
+        screen.blit(max_quantity_text, (help_x, status_y_start + 90))
+        
 
     # 短時間モード中
     elif state == SPECIAL_ACTIVE:
