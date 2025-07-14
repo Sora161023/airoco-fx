@@ -421,17 +421,17 @@ def draw_scrollbar():
     pygame.draw.rect(screen, COLOR_SCROLL_HANDLE, handle_rect, border_radius=5)
 
 def special_mode_calculate(now_price, last_price, time, negotiation_price):
-    magnification = 0.5 + math.sqrt(1 + 0.3 * time)     # 特別倍率
+    magnification = 1.0 +  0.25 * math.exp(time)                    # 特別倍率 = 1.0 + 0.25 * e^(時間経過)
 
     if last_price == 0:
         rate = 0.0
     else:
-        rate = (now_price - last_price) / last_price    # 価格変動率 = (現在価格 - 前回価格) / 前回価格
+        rate = (now_price - last_price) / last_price                # 価格変動率 = (現在価格 - 前回価格) / 前回価格
 
-    bonus = 1 + (rate * magnification)                  # ボーナス計算
+    bonus = 1 + (rate * magnification)                              # ボーナス計算
 
     if negotiation_price == 0:
-        new_negotiation_price = int(last_price * bonus) # ボーナスを適用した価格
+        new_negotiation_price = int(last_price * bonus)             # ボーナスを適用した価格
     else:
         new_negotiation_price = int(negotiation_price * bonus)
 
