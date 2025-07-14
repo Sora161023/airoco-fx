@@ -11,32 +11,11 @@ from typing import Tuple
 import constants
 from concurrent.futures import ThreadPoolExecutor
 import re
-from client import register
+import client
 import os
 
 USER_FILE = 'user_name.txt'
 API_SERVER_URL = 'http://localhost:5000'
-
-def get_my_money(user_name: str) -> None:
-    global money
-    try:
-        res = requests.get(f'{API_SERVER_URL}?user_name={user_name}')
-        if res.status_code == 200:
-            data = res.json()
-            if data:
-                money = list(data.values())[0]['score']
-                return
-    except Exception as e:
-        print('所持金取得エラー:', e)
-    money = 10000
-
-def save_my_money(user_name: str, money: int):
-    try:
-        payload = {'user_name': user_name, 'score': money}
-        res = requests.post(f'{API_SERVER_URL}', json=payload)
-        print('保存完了', res.status_code)
-    except Exception as e:
-        print('保存エラー:', e)
 
 # 過去7日間のCO2濃度データをAPIから取得する関数 get_past_7_days_co2
 def get_airoco_data():
@@ -162,6 +141,7 @@ stocks = {
     "temp": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0, "special_stocks": 0, "negotiation_price" :0},      # 気温株の保有数と合計購入価格と合計売値金と特別株数と損益
     "humid": {"stock" : 0, "buy_price" : 0, "sell_price" : 0 , "profit": 0, "special_stocks": 0, "negotiation_price" :0}       # 湿度株の保有数と合計購入価格と合計売値金と特別株数と損益
 }
+
 input_quantity = ""  # 数字を文字列で一時保存
 price_desk = {
     "co2"  : {"now_price": 0.0, "last_price": 0.0},  # CO2株の現在価格と前回価格
@@ -234,7 +214,7 @@ def input_user_name(screen, font, font_l) -> str:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
                     if re.fullmatch(r'[A-Za-z0-9]{3,12}', input_text):
-                        success, msg = register(input_text)
+                        success, msg = client.register(input_text)
                         if success:
                             with open(USER_FILE, 'w') as f:
                                 f.write(input_text)
@@ -471,10 +451,16 @@ else:
 print(f"ログインユーザー: {user_name}")
 
 
-# 並列処理でデータ取得(初回のみデータ取得をしておく)
-executor = ThreadPoolExecutor(max_workers=2)
+# データ取得(初回のみデータ取得をしておく)
+executor = ThreadPoolExecutor(max_workers=3)
 executor.submit(update_data, first=True)
-executor.submit(get_my_money, user_name)
+money = client.get_user_money(user_name)
+backuped_stocks = client.get_user_stocks(user_name)
+for stock_type in ["co2", "temp", "humid"]:
+    if stock_type in backuped_stocks:
+        stocks[stock_type]["stock"] = backuped_stocks[stock_type].get("stock", 0)
+        stocks[stock_type]["special_stocks"] = backuped_stocks[stock_type].get("special_stocks", 0)
+
 
 while running:
     active_prices = select_code[now_graph]['value']     # 表示の対象（CO2, 気温, 湿度）
@@ -503,12 +489,19 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+            # ゲーム終了時のバックアップ
+            try:
+                client.post_user_data(user_name, money, stocks)
+                print("バックアップ送信完了")
+            except Exception as e:
+                print(f"バックアップ送信失敗: {e}")
         
         # --- データ更新イベント ---
         elif event.type == UPDATE_DATA_EVENT:
             was_at_end = scroll_index >= max_scroll_len - 1
-            # データを更新(2回目以降)
+            # データを更新とAPIサーバへの送信(2回目以降)
             executor.submit(update_data)
+            executor.submit(client.post_user_data, user_name, money, stocks)
 
             # 新しいデータをselect_codeに反映
             select_code["co2"]["value"] = co2_values
@@ -699,8 +692,6 @@ while running:
         
     # 合計収益計算
     total_profit = sum(stocks[graph_type]["profit"] for graph_type in stocks)
-
-
 
     # 描画関数の呼び出し
     draw_buttons(now_graph)

@@ -3,32 +3,73 @@ import json
 
 BASE_URL = "http://localhost:5000"  # サーバーのURLとポートに応じて変更
 
-def post_score(user_name: str, score: int):
-    """スコアを投稿"""
+def post_user_data(user_name: str, money: int, stocks: dict):
+    """現在の残高と保有株をバックアップとして送信"""
     url = BASE_URL
     payload = {
         "user_name": user_name,
-        "score": score
+        "money": money,
+        "stocks": {
+            key: {
+                "stock": value["stock"],
+                "special_stocks": value["special_stocks"]
+            } for key, value in stocks.items()
+        }
     }
-    response = requests.post(url, json=payload)
-    print(f"POST / - Status: {response.status_code}")
-    print("Response:", response.text)
-
+    try:
+        res = requests.post(url, json=payload)
+        print(f"[Backup] POST / - Status: {res.status_code}")
+        print("Response:", res.text)
+    except Exception as e:
+        print("Error:", e)
 
 def get_top_ranking(limit: int = 10):
-    """上位ランキングを取得"""
     url = f"{BASE_URL}?limit={limit}"
-    response = requests.get(url)
-    print(f"GET /?limit={limit} - Status: {response.status_code}")
-    print("Response:", json.dumps(response.json(), indent=2, ensure_ascii=False))
-
+    res = requests.get(url)
+    print(f"GET /?limit={limit} - Status: {res.status_code}")
+    try:
+        data = res.json()
+        print("Response:", json.dumps(data, indent=2, ensure_ascii=False))
+    except json.JSONDecodeError:
+        print("Response is not valid JSON:")
+        print(res.text)
 
 def get_my_ranking(user_name: str):
-    """自分のランキングを取得"""
     url = f"{BASE_URL}?user_name={user_name}"
-    response = requests.get(url)
-    print(f"GET /?user_name={user_name} - Status: {response.status_code}")
-    print("Response:", json.dumps(response.json(), indent=2, ensure_ascii=False))
+    res = requests.get(url)
+    print(f"GET /?user_name={user_name} - Status: {res.status_code}")
+    try:
+        data = res.json()
+        print("Response:", json.dumps(data, indent=2, ensure_ascii=False))
+    except json.JSONDecodeError:
+        print("Response is not valid JSON:")
+        print(res.text)
+
+def get_user_money(user_name: str) -> int:
+    """ユーザーの現在の所持金を取得"""
+    try:
+        url = f"{BASE_URL}?user_name={user_name}&get_money=1"
+        res = requests.get(url)
+        if res.status_code == 200:
+            return res.json().get("money", 10000)
+    except Exception as e:
+        print("[ERROR] get_user_money:", e)
+    return 10000
+
+def get_user_stocks(user_name: str) -> dict:
+    """ユーザーの現在の保有株情報を取得"""
+    try:
+        url = f"{BASE_URL}?user_name={user_name}&get_stocks=1"
+        res = requests.get(url)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print("[ERROR] get_user_stocks:", e)
+    return {
+        "co2": {"stock": 0, "special_stocks": 0},
+        "temp": {"stock": 0, "special_stocks": 0},
+        "humid": {"stock": 0, "special_stocks": 0}
+    }
 
 
 def register(user_name: str, register: bool = True):
@@ -48,15 +89,26 @@ def register(user_name: str, register: bool = True):
     except json.JSONDecodeError:
         print("[ERROR] Could not decode response.")
         return False, "Invalid response"
+    
+
 
 
 
 if __name__ == "__main__":
-    success, msg = register('id123')
-    # 任意のテストケースをここで実行
-    post_score("admin", 998877665544)
-    post_score("bbbbbb", 20900)
-    post_score("af55555", 721)
+    user = "sora161023"
 
-    get_top_ranking(limit=5)
-    get_my_ranking("admin")
+    # ユーザー登録
+    register(user)
+
+    # データ送信（バックアップ）
+    post_user_data(user, 12345, {
+        "co2": {"stock": 3, "special_stocks": 1},
+        "temp": {"stock": 5, "special_stocks": 0},
+        "humid": {"stock": 2, "special_stocks": 4}
+    })
+
+    # 取得テスト
+    money = get_user_money(user)
+    stocks = get_user_stocks(user)
+    print(f"[確認] {user} の所持金: {money}")
+    print(f"[確認] {user} の保有株: {json.dumps(stocks, indent=2)}")

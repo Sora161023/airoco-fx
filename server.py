@@ -8,31 +8,33 @@ from wsgiref.simple_server import make_server
 class UserDB:
     DB_NAME    = 'users.db'
     TABLE_NAME = 'users'
-    KEY_LIST   = ['log_time', 'user_name', 'score']
+    KEY_LIST   = ['log_time', 'user_name', 'money', 'stocks_json']
 
     # query一覧
     CREATE_TABLE = f'''
         CREATE TABLE IF NOT EXISTS {TABLE_NAME}(
             log_time TEXT,
             user_name TEXT PRIMARY KEY,
-            score INTEGER
+            money INTEGER, 
+            stocks_json TEXT
         )
     '''
     INSERT_USER = f'''
-        INSERT INTO {TABLE_NAME}(log_time, user_name, score) VALUES (?, ?, ?)
-    '''                   # 新しいスコアを挿入
-    UPDATE_SCORE = f'''
-        UPDATE {TABLE_NAME} SET log_time = (?), score = (?) WHERE user_name = (?)
+        INSERT INTO {TABLE_NAME}(log_time, user_name, money, stocks_json)
+        VALUES (?, ?, ?, ?)
+    '''
+    UPDATE_USER = f'''
+        UPDATE {TABLE_NAME} SET log_time = ?, money = ?, stocks_json = ? WHERE user_name = ?
     '''
     SELECT_USER = f'''
-        SELECT * FROM {TABLE_NAME} WHERE user_name = (?)
+        SELECT * FROM {TABLE_NAME} WHERE user_name = ?
     '''
     SELECT_TOP = f'''
-        SELECT * FROM {TABLE_NAME} ORDER BY score DESC LIMIT (?)
+        SELECT * FROM {TABLE_NAME} ORDER BY money DESC LIMIT ?
     '''
     SELECT_RANKING = f'''
-        SELECT *, RANK() OVER(ORDER BY score DESC) as ranking FROM {TABLE_NAME} WHERE user_name = (?)
-    '''                                           # IDで検索
+        SELECT *, RANK() OVER(ORDER BY money DESC) as ranking FROM {TABLE_NAME} WHERE user_name = ?
+    '''                                # IDで検索
 
     def __init__(self):
         if not os.path.isfile(self.DB_NAME):
@@ -57,36 +59,57 @@ class UserDB:
             return {"success": False, "message": f"Already used this name: {user_name}"}
         else:
             log_time = self._get_log_time()
-            self._execute(self.INSERT_USER, [log_time, user_name, 10000])
+            initial_stocks = {
+                "co2": {"stock": 0, "special_stocks": 0},
+                "temp": {"stock": 0, "special_stocks": 0},
+                "humid": {"stock": 0, "special_stocks": 0}
+            }
+            stocks_json = json.dumps(initial_stocks)
+            self._execute(self.INSERT_USER, [log_time, user_name, 10000, stocks_json])
             return {"success": True, "message": f"Registered the user: {user_name}"}
 
-    def get_my_money(self, user_name: str):
+    def set_user_data(self, user_name, money, stocks):
+        log_time = self._get_log_time()
+        stocks_json = json.dumps(stocks)
+        if self._execute(self.SELECT_USER, [user_name]):
+            self._execute(self.UPDATE_USER, [log_time, money, stocks_json, user_name])
+        else:
+            self._execute(self.INSERT_USER, [log_time, user_name, money, stocks_json])
+
+    def get_user_data(self, user_name):
         res = self._execute(self.SELECT_USER, [user_name])
         if res:
             return {1: dict(zip(self.KEY_LIST, res[0]))}
         return {}
-    
-    def set_my_money(self, user_name: str, score: int):
-        log_time = self._get_log_time()
-        if self._execute(self.SELECT_USER, [user_name]):
-            self._execute(self.UPDATE_SCORE, [log_time, user_name, score])
-        else:
-            self._execute(self.INSERT_USER, [log_time, user_name, score])
 
-    def get_top_ranking(self, limit: int):
-        res = self._execute(self.SELECT_TOP, [limit])
+    def get_top_ranking(self, limit):
+        query = f'''
+            SELECT log_time, user_name, money, stocks_json,
+                RANK() OVER(ORDER BY money DESC) as ranking
+            FROM {self.TABLE_NAME}
+            LIMIT ?
+        '''
+        res = self._execute(query, [limit])
         if res:
             return {
-                i+1: dict(zip(self.KEY_LIST, row)) for i, row in enumerate(res)
+                str(row[-1]): dict(zip(self.KEY_LIST, row[:-1]))
+                for row in res
             }
         return {}
-    
-    def get_my_ranking(self, user_name: str):
-        res = self._execute(self.SELECT_RANKING, [user_name])
-        if res:
-            return {str(res[0][-1]): dict(zip(self.KEY_LIST, res[0]))}
-        return {}
 
+    def get_my_ranking(self, user_name):
+        query = f'''
+            SELECT log_time, user_name, money, stocks_json,
+                RANK() OVER(ORDER BY money DESC) as ranking
+            FROM {self.TABLE_NAME}
+            WHERE user_name = ?
+        '''
+        res = self._execute(query, [user_name])
+        if res:
+            return {
+                str(res[0][-1]): dict(zip(self.KEY_LIST, res[0][:-1]))
+            }
+        return {}
 
 
 class APIServer:
@@ -115,8 +138,29 @@ class APIServer:
                 # ランキング上位を取得
                 limit = qs.get('limit', [None])[0]
                 register = qs.get('register', [None])[0]
+                get_money_flag = qs.get('get_money', [None])[0]
+                get_stocks_flag = qs.get('get_stocks', [None])[0]
+
                 if user and register:
                     res = self.user_db.is_registered(user)
+                elif user and get_money_flag:
+                    user_data = self.user_db.get_user_data(user)
+                    if user_data:
+                        res = {"money": user_data[1]["money"]}
+                    else:
+                        res = {"money": 10000}
+
+                elif user and get_stocks_flag:
+                    user_data = self.user_db.get_user_data(user)
+                    if user_data:
+                        res = json.loads(user_data[1]["stocks_json"])
+                    else:
+                        res = {
+                            "co2": {"stock": 0, "special_stocks": 0},
+                            "temp": {"stock": 0, "special_stocks": 0},
+                            "humid": {"stock": 0, "special_stocks": 0}
+                        }
+
                 elif user and limit:
                     res = self.user_db.get_top_ranking(int(limit))
                 elif user:
@@ -137,19 +181,15 @@ class APIServer:
             return [res]
     
         if request_method == 'POST':
-            wsgi_input = environ.get('wsgi.input')
-            if wsgi_input is None:
-                response('400 Bad Reuest', header)
-                return []
-            
-            req = json.loads(wsgi_input.read(int(environ.get('CONTENT_LENGTH', 0))).decode('utf-8'))
-            if req:
-                user = req.get('user_name')
-                score = req.get('score')
-                if user and score:
-                    self.user_db.set_my_money(user, score)
-                    response('200 OK', header)
-                    return [b'OK']
+            length = int(environ.get('CONTENT_LENGTH', 0))
+            req = json.loads(environ['wsgi.input'].read(length).decode('utf-8'))
+            user = req.get('user_name')
+            money = req.get('money')
+            stocks = req.get('stocks')
+            if user and money is not None and stocks is not None:
+                self.user_db.set_user_data(user, money, stocks)
+                response('200 OK', header)
+                return [b'OK']
             response('400 Bad Request', header)
             return [b'Error']
         
