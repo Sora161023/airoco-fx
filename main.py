@@ -10,7 +10,11 @@ import math
 from typing import Tuple
 import constants
 from concurrent.futures import ThreadPoolExecutor
+import re
+from client import register
+import os
 
+USER_FILE = 'user_name.txt'
 API_SERVER_URL = 'http://localhost:5000'
 
 def get_my_money(user_name: str) -> None:
@@ -192,6 +196,58 @@ button_map = {
 input_quantity = ""  # 数字を文字列で一時保存
 no_money_message = "" # 所持金不足メッセージ
 message_display_time = 0 # メッセージ表示開始時間
+
+def input_user_name(screen, font, font_l) -> str:
+    input_text = ""
+    error_message = ""
+
+    while True:
+        screen.fill((245, 245, 230))  # クリーム色背景
+
+        # タイトル
+        title = font_l.render("ユーザー名登録", True, (50, 50, 50))
+        screen.blit(title, title.get_rect(center=(250, 80)))
+
+        # 入力欄の外枠
+        pygame.draw.rect(screen, (255, 255, 255), (100, 150, 300, 40), border_radius=10)
+        pygame.draw.rect(screen, (180, 180, 180), (100, 150, 300, 40), 2, border_radius=10)
+
+        # 入力中の文字
+        text_surface = font.render(input_text if input_text else "_", True, (0, 100, 200))
+        screen.blit(text_surface, (110, 158))
+
+        # エラーメッセージ
+        if error_message:
+            error_surf = font.render(error_message, True, (200, 0, 0))
+            screen.blit(error_surf, (100, 200))
+
+        # フッターメッセージ
+        footer = font.render("英数字3～12文字で入力し、Enterで登録", True, (100, 100, 100))
+        screen.blit(footer, (100, 270))
+
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    if re.fullmatch(r'[A-Za-z0-9]{3,12}', input_text):
+                        success, msg = register(input_text)
+                        if success:
+                            with open(USER_FILE, 'w') as f:
+                                f.write(input_text)
+                            return input_text
+                        else:
+                            error_message = msg
+                    else:
+                        error_message = "不正な名前（英数字3～12文字）"
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                elif event.unicode.isalnum():
+                    if len(input_text) < 12:
+                        input_text += event.unicode
 
 def update_handle_position():
     """scroll_indexに基づいてスクロールバーハンドルの位置を更新する"""
@@ -403,7 +459,17 @@ def special_mode_calculate(now_price, last_price, time, negotiation_price):
 
 # --- メインループ ---
 running = True
-user_name = 'admin'
+user_name = 'guest'
+
+# ユーザー名の読み込み・登録
+if os.path.exists(USER_FILE):
+    with open(USER_FILE, 'r') as f:
+        user_name = f.read().strip()
+else:
+    user_name = input_user_name(screen, font, font_l)
+
+print(f"ログインユーザー: {user_name}")
+
 
 # 並列処理でデータ取得(初回のみデータ取得をしておく)
 executor = ThreadPoolExecutor(max_workers=2)
