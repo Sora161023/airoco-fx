@@ -1,5 +1,7 @@
 import requests
 import json
+import aiohttp
+import asyncio
 
 BASE_URL = "http://localhost:5000"  # サーバーのURLとポートに応じて変更
 
@@ -70,6 +72,44 @@ def get_user_stocks(user_name: str) -> dict:
         "temp": {"stock": 0, "special_stocks": 0},
         "humid": {"stock": 0, "special_stocks": 0}
     }
+
+# 上記２つのasync版
+async def async_get_user_money(session: aiohttp.ClientSession, user_name: str) -> int:
+    url = f"{BASE_URL}?user_name={user_name}&get_money=1"
+    try:
+        async with session.get(url) as res:
+            if res.status == 200:
+                data = await res.json()
+                return data.get("money", 10000)
+    except Exception as e:
+        print("[ERROR] async_get_user_money:", e)
+    return 10000
+
+
+async def async_get_user_stocks(session: aiohttp.ClientSession, user_name: str) -> dict:
+    url = f"{BASE_URL}?user_name={user_name}&get_stocks=1"
+    try:
+        async with session.get(url) as res:
+            if res.status == 200:
+                return await res.json()
+    except Exception as e:
+        print("[ERROR] async_get_user_stocks:", e)
+    return {
+        "co2": {"stock": 0, "special_stocks": 0},
+        "temp": {"stock": 0, "special_stocks": 0},
+        "humid": {"stock": 0, "special_stocks": 0}
+    }
+
+
+async def get_user_data_concurrently(user_name: str):
+    async with aiohttp.ClientSession() as session:
+        money_task = asyncio.create_task(async_get_user_money(session, user_name))
+        stocks_task = asyncio.create_task(async_get_user_stocks(session, user_name))
+
+        money = await money_task
+        stocks = await stocks_task
+
+        return money, stocks
 
 
 def register(user_name: str, register: bool = True):

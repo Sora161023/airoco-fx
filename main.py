@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import pygame
 import sys
 import time
@@ -13,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 import client
 import os
+
 
 USER_FILE = 'user_name.txt'
 API_SERVER_URL = 'http://localhost:5000'
@@ -47,6 +49,20 @@ def get_airoco_data():
     co2_values = data[:, 0].tolist()  # CO2濃度
     temp_values = data[:, 1].tolist()  # 気温
     humid_values = data[:, 2].tolist()  # 湿度
+
+# 起動時に必要なデータを非同期で取得する（描画は即開始）
+def init_async_data():
+    global co2_values, temp_values, humid_values
+    global money, stocks
+
+    update_data(first=True)  # これで select_code にデータが入る
+
+    money = client.get_user_money(user_name)
+    backuped_stocks = client.get_user_stocks(user_name)
+    for stock_type in ["co2", "temp", "humid"]:
+        if stock_type in backuped_stocks:
+            stocks[stock_type]["stock"] = backuped_stocks[stock_type].get("stock", 0)
+            stocks[stock_type]["special_stocks"] = backuped_stocks[stock_type].get("special_stocks", 0)
 
 # 既存のデータと新しいデータをマージする関数
 def update_data(first=False):
@@ -437,6 +453,12 @@ def special_mode_calculate(now_price, last_price, time, negotiation_price):
 
     return new_negotiation_price
 
+def show_loading_screen():
+    screen.fill(COLOR_BG)
+    loading_text = font_l.render("データを読み込んでいます...", True, COLOR_BLACK)
+    screen.blit(loading_text, loading_text.get_rect(center=(250, 300)))
+    pygame.display.flip()
+
 # --- メインループ ---
 running = True
 user_name = 'guest'
@@ -452,15 +474,16 @@ print(f"ログインユーザー: {user_name}")
 
 
 # データ取得(初回のみデータ取得をしておく)
-executor = ThreadPoolExecutor(max_workers=3)
+executor = ThreadPoolExecutor(max_workers=2)
 executor.submit(update_data, first=True)
-money = client.get_user_money(user_name)
-backuped_stocks = client.get_user_stocks(user_name)
+show_loading_screen()
+
+# 非同期タスクとして実行
+money, backuped_stocks = asyncio.run(client.get_user_data_concurrently(user_name))
 for stock_type in ["co2", "temp", "humid"]:
     if stock_type in backuped_stocks:
         stocks[stock_type]["stock"] = backuped_stocks[stock_type].get("stock", 0)
         stocks[stock_type]["special_stocks"] = backuped_stocks[stock_type].get("special_stocks", 0)
-
 
 while running:
     active_prices = select_code[now_graph]['value']     # 表示の対象（CO2, 気温, 湿度）
